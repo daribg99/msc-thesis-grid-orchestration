@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # ---------- Default global options ----------
-NS=""                         # --ns <namespace>  (OBBLIGATORIO)
-CLUSTER_PREFIX="cluster1"     # --cluster-prefix
+PDC_NS=""                         # --ns <namespace>  (OBBLIGATORIO)
+DB_NS="db"                         # --db-ns <namespace>  (default: db)
+CLUSTER_PREFIX="cluster-db"     # --cluster-prefix
 DB_NAME=""             # --db
 PXC_POD=""                    # --pxc-pod (default: <cluster_prefix>-pxc-0)
 HAPROXY_SVC=""                # --haproxy-svc (default: <cluster_prefix>-haproxy)
@@ -28,7 +29,10 @@ Subcommands:
   help              Show this help
 
 Global options:
-  --ns namespace                     mandatory
+  --db-context namespace               mandatory
+  --openpdc-context namespace           mandatory
+  --db-ns namespace                     mandatory
+  --pdc-ns namespace                    mandatory
   --db NAME                          mandatory
   --pod NAME                         (es. openpdc-pod-1234-5678) mandatory
   --cluster-prefix NAME              (default: cluster1)
@@ -80,7 +84,7 @@ createaccount options:
   --lastname NAME        mandatory
 
 Examples:
-  $0 addpmu --name "Pmu-3" --pod <podname> --ns lower --db lower
+  $0 addpmu --db-context k3d-cluster-db --openpdc-context k3d-cluster-1 --db-ns db --pdc-ns lower --name "Pmu-2" --pod <podname> --db lower
   $0 createoutputstream --ns lower --db lower --pod <podname> --acronym LOWER --name low2high  --pmus "PMU-3"
   $0 createhistorian --db higher --ns higher --pod <podname>
   $0 connectiontopdc --ns higher --db higher --name "lowerpdc" --pod <podname> --acronym "LOWER" --server "openpdc-low"  --pmus "PMU-1,PMU-2,PMU-3"
@@ -112,33 +116,25 @@ check_global_params(){
 
   OPENPDC_POD="${OPENPDC_POD:-${POD:-}}"
 
-  if [[ -z "${NS:-}" ]]; then
-    echo "Error: namespace not set (use --ns)." >&2
+  if ! kubectl --context "$DB_CONTEXT" get namespace "$DB_NS" >/dev/null 2>&1; then
+    echo "Error: Namespace '$DB_NS' not found in DB context '$DB_CONTEXT'." >&2
+    return 1
+  fi
+  if ! kubectl --context "$PDC_CONTEXT" get namespace "$PDC_NS" >/dev/null 2>&1; then
+    echo "Error: Namespace '$PDC_NS' not found in openPDC context '$PDC_CONTEXT'." >&2
     return 1
   fi
 
-  if ! kubectl get namespace "$NS" >/dev/null 2>&1; then
-    echo "Error: Namespace '$NS' does not exist." >&2
+  if ! kubectl --context "$DB_CONTEXT" get pod "$POD" -n "$DB_NS" >/dev/null 2>&1; then
+    echo "Error: Pod '$POD' not found in namespace '$DB_NS' (context $DB_CONTEXT)." >&2
     return 1
   fi
-
-  if ! kubectl get pod "$PXC_POD" -n "$NS" >/dev/null 2>&1; then
-    echo "Error: Pod '$PXC_POD' does not exist in namespace '$NS'." >&2
+  if ! kubectl --context "$DB_CONTEXT" get svc "$SVC" -n "$DB_NS" >/dev/null 2>&1; then
+    echo "Error: Service '$SVC' not found in namespace '$DB_NS' (context $DB_CONTEXT)." >&2
     return 1
   fi
-
-  if ! kubectl get svc "$HAPROXY_SVC" -n "$NS" >/dev/null 2>&1; then
-    echo "Error: Service '$HAPROXY_SVC' does not exist in namespace '$NS'." >&2
-    return 1
-  fi
-
-  if [[ -z "${OPENPDC_POD:-}" ]]; then
-    echo "Error: openPDC pod not set (use --pod)." >&2
-    return 1
-  fi
-  # set ns to lower for pdc location
-  if ! kubectl get pod "$OPENPDC_POD" -n lower >/dev/null 2>&1; then
-    echo "Error: Pod '$OPENPDC_POD' does not exist in namespace '$NS'." >&2
+  if ! kubectl --context "$PDC_CONTEXT" get pod "$OPENPDC_POD" -n "$PDC_NS" >/dev/null 2>&1; then
+    echo "Error: openPDC pod '$OPENPDC_POD' not found in namespace '$PDC_NS' (context $PDC_CONTEXT)." >&2
     return 1
   fi
 
@@ -183,7 +179,10 @@ addpmu_cmd() {
       usage_global
       return 0
       ;;
-      --ns) NS="$2"; shift 2;;
+      --db-context) DB_CONTEXT="$2"; shift 2;;
+      --openpdc-context) PDC_CONTEXT="$2"; shift 2;;
+      --db-ns) DB_NS="$2"; shift 2;;
+      --pdc-ns) PDC_NS="$2"; shift 2;;
       --cluster-prefix) CLUSTER_PREFIX="$2"; POD="${CLUSTER_PREFIX}-pxc-0"; SVC="${CLUSTER_PREFIX}-haproxy"; SECRET="${CLUSTER_PREFIX}-secrets"; shift 2;;
       --db) DB_NAME="$2"; shift 2;;
       --pod) OPENPDC_POD="$2"; shift 2;;
@@ -198,10 +197,22 @@ addpmu_cmd() {
       *) echo "Argument unknown: $1"; return 1;;
     esac
   done
-  
-  #if no ns or db or pod, exit
-  if [[ -z "$NS" ]]; then
-    echo "Error: --ns <namespace> is mandatory."
+
+  #if no pdc_ns, db_ns, pdc_context, ns_context or db or pod, exit
+  if [[ -z "$PDC_CONTEXT" ]]; then
+    echo "Error: --openpdc-context <context> is mandatory."
+    return 1
+  fi
+  if [[ -z "$DB_CONTEXT" ]]; then
+    echo "Error: --db-context <context> is mandatory."
+    return 1
+  fi
+  if [[ -z "$DB_NS" ]]; then
+    echo "Error: --db-ns <namespace> is mandatory."
+    return 1
+  fi
+  if [[ -z "$PDC_NS" ]]; then
+    echo "Error: --pdc-ns <namespace> is mandatory."
     return 1
   fi
   if [[ -z "$DB_NAME" ]]; then
@@ -238,13 +249,13 @@ addpmu_cmd() {
   fi
 
   check_global_params || exit 1
-  echo "Namespace: $NS"
-  echo "DB: $DB_NAME  Pod: $POD  Svc: $SVC"
+  echo "Namespace PDC pod: $PDC_NS"
+  echo "DB: $DB_NAME  Pod DB: $POD  Svc: $SVC"
   echo "Name: $NAME  Acronym: $ACRONYM  Server: $SERVER  FPS: $FPS  Port: $PORT"
 
-  ROOTPWD="$(kubectl get secrets "$SECRET" -n "$NS" -o jsonpath='{.data.root}' | base64 --decode)"
-  
-  EXISTS=$(kubectl exec -n "$NS" -it "$POD" -c pxc -- \
+  ROOTPWD="$(kubectl --context "$DB_CONTEXT" get secrets "$SECRET" -n "$DB_NS" -o jsonpath='{.data.root}' | base64 --decode)"
+
+  EXISTS=$(kubectl --context "$DB_CONTEXT" exec -n "$DB_NS" -it "$POD" -c pxc -- \
     mysql -h "$SVC" -uroot -p"$ROOTPWD" -N -e "SELECT COUNT(*) FROM ${DB_NAME}.Device WHERE Acronym='${ACRONYM//\'/\'\'}';" 2>/dev/null)
   if [[ "$EXISTS" =~ ^[0-9]+$ ]] && [[ "$EXISTS" -gt 0 && $FORCE -ne 1 ]]; then
     echo "Device acronym '$ACRONYM' already exists in DB '$DB_NAME'. "
@@ -352,17 +363,17 @@ EOF
 #printf "%s\n" "$SQL"
 #echo "----------- END SQL -----------"
 
-printf "%s" "$SQL" | kubectl exec -i "$POD" -c pxc -n "$NS" -- \
+printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
   mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
 
 #run_mysql "$POD" "$SVC" "$ROOTPWD" "$DB_NAME" "$SQL"
 
 sleep 1
 echo "🔄 Reloading openPDC configuration..."
-  if kubectl exec -i "$OPENPDC_POD" -n "$NS" -c openpdc -- bash -lc \
+  if kubectl --context "$PDC_CONTEXT" exec -i "$OPENPDC_POD" -n "$PDC_NS" -c openpdc -- bash -lc \
    "screen -ls | grep -q '\.openpdc' && screen -S openpdc -X stuff $'ReloadConfig\r'" \
    >/dev/null 2>&1; then
-  sleep 1
+  sleep 1  
   echo "✅ Configuration successfully reloaded!"
 else
   echo "Impossible to send ReloadConfig to '$OPENPDC_POD'." >&2

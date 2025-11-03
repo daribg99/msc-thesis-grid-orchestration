@@ -51,6 +51,11 @@ docker run --rm --privileged --net container:k3d-cluster-5-server-0 \
 
 # PDC configuration
 
+To merge multiple kubeconfig files into one, create a directory to hold them:
+```bash
+kubectl config view --merge --flatten > "$MERGED"
+```
+
 To launch kubectl commands on a specific namespace with specific context, use:
 ```bash
 kubectl --kubeconfig kubeconfigs/merged.yaml --context k3d-cluster-1 -n lower
