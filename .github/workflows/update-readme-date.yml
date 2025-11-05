@@ -3,6 +3,8 @@ name: Update README last-updated
 
 on:
   push:
+permissions:
+  contents: write
 
 jobs:
   update-readme:
