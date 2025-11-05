@@ -85,7 +85,7 @@ createaccount options:
 
 Examples:
   $0 addpmu --db-context k3d-cluster-db --openpdc-context k3d-cluster-1 --db-ns db --pdc-ns lower --name "Pmu-2" --pod <podname> --db lower
-  $0 createoutputstream --ns lower --db lower --pod <podname> --acronym LOWER --name low2high  --pmus "PMU-3"
+  $0 createoutputstream --db-context k3d-cluster-db --openpdc-context k3d-cluster-1 --db-ns db --pdc-ns lower --db lower --pod <podname> --acronym LOWER --name low2high  --pmus "PMU-3"
   $0 createhistorian --db higher --ns higher --pod <podname>
   $0 connectiontopdc --ns higher --db higher --name "lowerpdc" --pod <podname> --acronym "LOWER" --server "openpdc-low"  --pmus "PMU-1,PMU-2,PMU-3"
   $0 createaccount --ns higher --db higher --pod <podname> --username polito --password Polito00 --firstname polito --lastname rse
@@ -363,8 +363,8 @@ EOF
 #printf "%s\n" "$SQL"
 #echo "----------- END SQL -----------"
 
-printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
-  mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
+#printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
+#  mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
 
 #run_mysql "$POD" "$SVC" "$ROOTPWD" "$DB_NAME" "$SQL"
 
@@ -400,7 +400,10 @@ createoutputstream_cmd() {
       usage_global
       return 0
       ;;
-      --ns) NS="$2"; shift 2;;
+      --db-context) DB_CONTEXT="$2"; shift 2;;
+      --openpdc-context) PDC_CONTEXT="$2"; shift 2;;
+      --db-ns) DB_NS="$2"; shift 2;;
+      --pdc-ns) PDC_NS="$2"; shift 2;;
       --cluster-prefix) CLUSTER_PREFIX="$2"; shift 2;;
       --db) DB_NAME="$2"; shift 2;;
       --pod) OPENPDC_POD="$2"; shift 2;;
@@ -425,8 +428,20 @@ createoutputstream_cmd() {
   SECRET="${CLUSTER_PREFIX}-secrets"
 
   #if not ns, db, pmus, name or acronym, exit
-  if [[ -z "$NS" ]]; then
-    echo "Error: --ns <namespace> is mandatory."
+  if [[ -z "$PDC_CONTEXT" ]]; then
+    echo "Error: --openpdc-context <context> is mandatory."
+    return 1
+  fi
+  if [[ -z "$DB_CONTEXT" ]]; then
+    echo "Error: --db-context <context> is mandatory."
+    return 1
+  fi
+  if [[ -z "$DB_NS" ]]; then
+    echo "Error: --db-ns <namespace> is mandatory."
+    return 1
+  fi
+  if [[ -z "$PDC_NS" ]]; then
+    echo "Error: --pdc-ns <namespace> is mandatory."
     return 1
   fi
   if [[ -z "$DB_NAME" ]]; then
@@ -450,12 +465,12 @@ createoutputstream_cmd() {
     return 1
   fi
 
-  echo "Namespace: $NS"
-  echo "DB: $DB_NAME  Pod: $POD  Svc: $SVC"
+  echo "Namespace PDC pod: $PDC_NS"
+  echo "DB: $DB_NAME  Pod DB: $POD  Svc: $SVC"
   echo "OutputStream: $NAME ($ACRONYM)  PMUs: $PMUS  FPS: $FPS  Port: $PORT"
 
   check_global_params || exit 1
-  ROOTPWD="$(kubectl get secrets "$SECRET" -n "$NS" -o jsonpath='{.data.root}' | base64 --decode)"
+  ROOTPWD="$(kubectl --context "$DB_CONTEXT" get secrets "$SECRET" -n "$DB_NS" -o jsonpath='{.data.root}' | base64 --decode)"
 
   SQL=$(cat <<EOF
 USE \`${DB_NAME}\`;
@@ -532,21 +547,21 @@ EOF
 SQL+="$BLOCK"
     idcode=$((idcode+1))
   done
-
-
-  
-   printf "%s" "$SQL" | kubectl exec -i "$POD" -c pxc -n "$NS" -- \
-   mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
-
    
     #echo "---------- BEGIN SQL ----------"
-    #printf "%s\n" "$SQL"
+    printf "%s\n" "$SQL"
     #echo "----------- END SQL -----------"
+ # printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
+ # mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
+
+  #run_mysql "$POD" "$SVC" "$ROOTPWD" "$DB_NAME" "$SQL"
+
+  sleep 1
   echo "🔄 Reloading openPDC configuration..."
-  if kubectl exec -i "$OPENPDC_POD" -n "$NS" -c openpdc -- bash -lc \
-   "screen -ls | grep -q '\.openpdc' && screen -S openpdc -X stuff $'ReloadConfig\r'" \
-   >/dev/null 2>&1; then
-    sleep 1
+    if kubectl --context "$PDC_CONTEXT" exec -i "$OPENPDC_POD" -n "$PDC_NS" -c openpdc -- bash -lc \
+    "screen -ls | grep -q '\.openpdc' && screen -S openpdc -X stuff $'ReloadConfig\r'" \
+    >/dev/null 2>&1; then
+    sleep 1  
     echo "✅ Configuration successfully reloaded!"
   else
     echo "Impossible to send ReloadConfig to '$OPENPDC_POD'." >&2
