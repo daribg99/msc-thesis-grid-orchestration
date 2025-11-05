@@ -4,4 +4,4 @@ This repository contains drafts, experiments and notes for the thesis. The work 
 
 Status
 - 🔧 In development
-- 📅 Last updated: 3 November 2025
+- 📅 Last updated: 2 November 2025

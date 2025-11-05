@@ -17,14 +17,18 @@ jobs:
         run: |
           FILE="README.md"
           DATE="$(date -u '+%-d %B %Y')"
-          if grep -q -E '^(📅 )?Last updated:' "$FILE"; then
-            sed -E -i "s|^(📅 )?Last updated:.*$|📅 Last updated: $DATE|" "$FILE"
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add "$FILE"
-            git commit -m "ci: update README last updated to $DATE" || echo "no changes to commit"
-            git push
+
+          if grep -q 'Last updated:' "$FILE"; then
+            # replace everything after "Last updated:" preserving any prefix (bullets/emoji)
+            sed -E -i "s|(Last updated:).*|\1 $DATE|" "$FILE"
           else
-            echo "No 'Last updated:' line found in $FILE" >&2
-            exit 1
+            # append a new line with the marker (keeps file readable)
+            echo "" >> "$FILE"
+            echo "📅 Last updated: $DATE" >> "$FILE"
           fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$FILE"
+          git commit -m "ci: update README last updated to $DATE" || echo "no changes to commit"
+          git push
