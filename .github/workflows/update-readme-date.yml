@@ -1,0 +1,30 @@
+# filepath: .github/workflows/update-readme-date.yml
+name: Update README last-updated
+
+on:
+  push:
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Update last updated date in README
+        run: |
+          FILE="README.md"
+          DATE="$(date -u '+%-d %B %Y')"
+          if grep -q -E '^(📅 )?Last updated:' "$FILE"; then
+            sed -E -i "s|^(📅 )?Last updated:.*$|📅 Last updated: $DATE|" "$FILE"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add "$FILE"
+            git commit -m "ci: update README last updated to $DATE" || echo "no changes to commit"
+            git push
+          else
+            echo "No 'Last updated:' line found in $FILE" >&2
+            exit 1
+          fi
