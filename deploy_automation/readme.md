@@ -4,25 +4,13 @@ Create a dedicated Docker network for k3d clusters:
 ```bash
 docker network create mc-net
 ```
-Create a k3d cluster without Traefik on the created network:
+Create a k3d cluster without Traefik on the created network with port mappings:
 ```bash
-k3d cluster create cluster-1 --servers 1 --agents 0 --k3s-arg "--disable=traefik@server:*" --network mc-net
-```
-or, with port mappings:
-```bash
-k3d cluster create cluster-1 \
-  -p "8500:30085@server:0" \
-  -p "6165:30065@server:0" \
-  -p "4712:30099@server:0" \
-  --agents 1 \
-  --network mc-net
+k3d cluster create cluster-1 --image rancher/k3s:v1.24.17-k3s1 -p "30085:30085@server:0" -p "30065:30065@server:0" -p "30099:30099@server:0" --agents 1 --network mc-net
 ```
 and for db:
 ```bash
-k3d cluster create cluster-db \
-  -p "3306:30950@server:0" \
-  --agents 1 \
-  --network mc-net
+k3d cluster create cluster-db --image rancher/k3s:v1.24.17-k3s1 -p "30950:30950@server:0" --agents 1 --network mc-net
 ```
 Retrieve the IP address of the server node:
 ```bash
