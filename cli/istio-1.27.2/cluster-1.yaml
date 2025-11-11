@@ -1,0 +1,9 @@
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+spec:
+  profile: remote
+  values:
+    istiodRemote:
+      injectionPath: /inject/cluster/cluster-1/net/mc-net
+    global:
+      remotePilotAddress: k3d-cluster-db-server-0.istio-system.svc.cluster.local

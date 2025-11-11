@@ -10,7 +10,7 @@ k3d cluster create cluster-1 --image rancher/k3s:v1.24.17-k3s1 -p "30085:30085@s
 ```
 and for db:
 ```bash
-k3d cluster create cluster-db --image rancher/k3s:v1.24.17-k3s1 -p "30950:30950@server:0" --agents 1 --network mc-net
+k3d cluster create cluster-db   --image rancher/k3s:v1.29.4-k3s1   --agents 1   --network mc-net   --k3s-arg "--disable=traefik@server:0"   -p "30950:30950@server:0"   -p "15021:15021@server:0"   -p "15443:15443@server:0"   -p "15012:15012@server:0"   -p "15017:15017@server:0"
 ```
 Retrieve the IP address of the server node:
 ```bash
@@ -58,7 +58,7 @@ Copy secret from db-cluster to cluster-1:
 ```bash
 kubectl --context k3d-cluster-db -n db get secret cluster-db-secrets -o yaml | \
 sed 's/namespace: db/namespace: lower/' | \
-sed 's/name: cluster-db-secrets/name: clusterdb-secrets/' | \
+sed 's/name: cluster-db-secrets/name: cluster-db-secrets/' | \
 kubectl --context k3d-cluster-1 -n lower apply -f -
 ```
 
