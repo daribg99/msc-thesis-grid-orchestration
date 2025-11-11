@@ -32,5 +32,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "$FILE"
-          git commit -m "ci: update README last updated to $DATE" || echo "no changes to commit"
+          git commit -m "[bot]: update README last updated to $DATE" || echo "no changes to commit"
           git push

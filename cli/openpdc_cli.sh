@@ -85,10 +85,14 @@ createaccount options:
 
 Examples:
   $0 addpmu --db-context k3d-cluster-db --openpdc-context k3d-cluster-1 --db-ns db --pdc-ns lower --name "Pmu-2" --pod <podname> --db lower
-  $0 createoutputstream --db-context k3d-cluster-db --openpdc-context k3d-cluster-1 --db-ns db --pdc-ns lower --db lower --pod <podname> --acronym LOWER --name low2high  --pmus "PMU-3"
-  $0 createhistorian --db higher --ns higher --pod <podname>
-  $0 connectiontopdc --ns higher --db higher --name "lowerpdc" --pod <podname> --acronym "LOWER" --server "openpdc-low"  --pmus "PMU-1,PMU-2,PMU-3"
-  $0 createaccount --ns higher --db higher --pod <podname> --username polito --password Polito00 --firstname polito --lastname rse
+  
+  $0 createoutputstream --db-context k3d-cluster-db --openpdc-context k3d-cluster-1 --db-ns db --pdc-ns lower --db lower --pod <podname> --acronym LOWER --name low2high  --pmus "PMU-2"
+  
+  $0 createhistorian --db-context k3d-cluster-db --openpdc-context k3d-cluster-2 --db-ns db --pdc-ns lower --db cluster2 --pod <podname>
+  
+  $0 connectiontopdc --db-context k3d-cluster-db --openpdc-context k3d-cluster-2 --db-ns db --pdc-ns lower --db cluster2 --name "lowerpdc" --pod <podname> --acronym "LOWER" --server "openpdc-low"  --pmus "PMU-1,PMU-2,PMU-3"
+  
+  $0 createaccount --db-context k3d-cluster-db --openpdc-context k3d-cluster-2 --db-ns db --pdc-ns lower --db cluster2 --pod <podname> --username polito --password Polito00 --firstname polito --lastname rse
 USAGE
 }
 
@@ -249,9 +253,13 @@ addpmu_cmd() {
   fi
 
   check_global_params || exit 1
-  echo "Namespace PDC pod: $PDC_NS"
-  echo "DB: $DB_NAME  Pod DB: $POD  Svc: $SVC"
-  echo "Name: $NAME  Acronym: $ACRONYM  Server: $SERVER  FPS: $FPS  Port: $PORT"
+  cat <<EOF
+  Namespace PDC pod: ${PDC_NS}
+DB name : ${DB_NAME}
+DB pod  : ${POD}
+DB svc  : ${SVC}
+Name added pmu: ${NAME} Acronym: ${ACRONYM} Server: ${SERVER} FPS: ${FPS} Port: ${PORT}
+EOF
 
   ROOTPWD="$(kubectl --context "$DB_CONTEXT" get secrets "$SECRET" -n "$DB_NS" -o jsonpath='{.data.root}' | base64 --decode)"
 
@@ -363,8 +371,8 @@ EOF
 #printf "%s\n" "$SQL"
 #echo "----------- END SQL -----------"
 
-#printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
-#  mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
+printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
+  mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
 
 #run_mysql "$POD" "$SVC" "$ROOTPWD" "$DB_NAME" "$SQL"
 
@@ -465,9 +473,14 @@ createoutputstream_cmd() {
     return 1
   fi
 
-  echo "Namespace PDC pod: $PDC_NS"
-  echo "DB: $DB_NAME  Pod DB: $POD  Svc: $SVC"
-  echo "OutputStream: $NAME ($ACRONYM)  PMUs: $PMUS  FPS: $FPS  Port: $PORT"
+  cat <<EOF
+  Namespace PDC pod: ${PDC_NS}
+DB name : ${DB_NAME}
+DB pod  : ${POD}
+DB svc  : ${SVC}
+OutputStream: ${NAME} (${ACRONYM})  PMUs: ${PMUS}  FPS: ${FPS}  Port: ${PORT}
+EOF
+
 
   check_global_params || exit 1
   ROOTPWD="$(kubectl --context "$DB_CONTEXT" get secrets "$SECRET" -n "$DB_NS" -o jsonpath='{.data.root}' | base64 --decode)"
@@ -549,10 +562,10 @@ SQL+="$BLOCK"
   done
    
     #echo "---------- BEGIN SQL ----------"
-    printf "%s\n" "$SQL"
+    #printf "%s\n" "$SQL"
     #echo "----------- END SQL -----------"
- # printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
- # mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
+  printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
+    mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
 
   #run_mysql "$POD" "$SVC" "$ROOTPWD" "$DB_NAME" "$SQL"
 
@@ -582,7 +595,10 @@ createhistorian_cmd() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help) usage_global; return 0;;
-      --ns) NS="$2"; shift 2;;
+      --db-context) DB_CONTEXT="$2"; shift 2;;
+      --openpdc-context) PDC_CONTEXT="$2"; shift 2;;
+      --db-ns) DB_NS="$2"; shift 2;;
+      --pdc-ns) PDC_NS="$2"; shift 2;;
       --cluster-prefix) CLUSTER_PREFIX="$2"; shift 2;;
       --db) DB_NAME="$2"; shift 2;;
       --pod) OPENPDC_POD="$2"; shift 2;;
@@ -598,9 +614,21 @@ createhistorian_cmd() {
   done
 
   #if no ns or db or podname, exit
-  if [[ -z "$NS" ]]; then
-    echo "Error: --ns <namespace> is mandatory."
-    return 1 
+  if [[ -z "$PDC_CONTEXT" ]]; then
+    echo "Error: --openpdc-context <context> is mandatory."
+    return 1
+  fi
+  if [[ -z "$DB_CONTEXT" ]]; then
+    echo "Error: --db-context <context> is mandatory."
+    return 1
+  fi
+  if [[ -z "$DB_NS" ]]; then
+    echo "Error: --db-ns <namespace> is mandatory."
+    return 1
+  fi
+  if [[ -z "$PDC_NS" ]]; then
+    echo "Error: --pdc-ns <namespace> is mandatory."
+    return 1
   fi
   if [[ -z "$DB_NAME" ]]; then
     echo "Error: --db <name> is mandatory."
@@ -613,12 +641,16 @@ createhistorian_cmd() {
   
 
   check_global_params || exit 1
-  echo "Namespace: $NS"
-  echo "DB: $DB_NAME  Pod: $POD  Svc: $SVC"
-  echo "Historian: $NAME ($ACRONYM)"
+  cat <<EOF
+Namespace PDC pod: ${PDC_NS}
+DB name : ${DB_NAME}
+DB pod  : ${POD}
+DB svc  : ${SVC}
+Historian: ${NAME} (${ACRONYM})
+EOF
  # --- root pwd dal secret ---
   local ROOTPWD
-  ROOTPWD="$(kubectl get secrets "$SECRET" -n "$NS" -o jsonpath='{.data.root}' | base64 --decode)"
+  ROOTPWD="$(kubectl --context "$DB_CONTEXT" get secrets "$SECRET" -n "$DB_NS" -o jsonpath='{.data.root}' | base64 --decode)"
 
   local CONN_SQL="NULL"
   if [[ -n "$CONNSTR" ]]; then
@@ -662,16 +694,16 @@ EOF
     #echo "----------- END SQL -----------"
   
 
-  printf "%s" "$SQL" | kubectl exec -i "$POD" -c pxc -n "$NS" -- \
-    mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
+  #printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
+    #mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
 
-  
 #set ns to lower for openPDC pod location
-echo "🔄 Reloading openPDC configuration..."
-  if kubectl exec -i "$OPENPDC_POD" -n lower -c openpdc -- bash -lc \
-   "screen -ls | grep -q '\.openpdc' && screen -S openpdc -X stuff $'ReloadConfig\r'" \
-   >/dev/null 2>&1; then
-    sleep 1
+  sleep 1
+  echo "🔄 Reloading openPDC configuration..."
+    if kubectl --context "$PDC_CONTEXT" exec -i "$OPENPDC_POD" -n "$PDC_NS" -c openpdc -- bash -lc \
+    "screen -ls | grep -q '\.openpdc' && screen -S openpdc -X stuff $'ReloadConfig\r'" \
+    >/dev/null 2>&1; then
+    sleep 1  
     echo "✅ Configuration successfully reloaded!"
   else
     echo "Impossible to send ReloadConfig to '$OPENPDC_POD'." >&2
@@ -685,8 +717,11 @@ echo "🔄 Reloading openPDC configuration..."
 connectiontopdc_cmd(){
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -h|--help) usage_global; return 0;;
-      --ns) NS="$2"; shift 2;;
+    -h|--help) usage_global; return 0;;
+      --db-context) DB_CONTEXT="$2"; shift 2;;
+      --openpdc-context) PDC_CONTEXT="$2"; shift 2;;
+      --db-ns) DB_NS="$2"; shift 2;;
+      --pdc-ns) PDC_NS="$2"; shift 2;;
       --cluster-prefix) CLUSTER_PREFIX="$2"; POD="${CLUSTER_PREFIX}-pxc-0"; SVC="${CLUSTER_PREFIX}-haproxy"; SECRET="${CLUSTER_PREFIX}-secrets"; shift 2;;
       --db) DB_NAME="$2"; shift 2;;
       --pod) OPENPDC_POD="$2"; shift 2;;
@@ -701,9 +736,21 @@ connectiontopdc_cmd(){
     esac
   done
   
-  if [[ -z "$NS" ]]; then
-    echo "Error: --ns <namespace> is mandatory."
-    return 1 
+  if [[ -z "$PDC_CONTEXT" ]]; then
+    echo "Error: --openpdc-context <context> is mandatory."
+    return 1
+  fi
+  if [[ -z "$DB_CONTEXT" ]]; then
+    echo "Error: --db-context <context> is mandatory."
+    return 1
+  fi
+  if [[ -z "$DB_NS" ]]; then
+    echo "Error: --db-ns <namespace> is mandatory."
+    return 1
+  fi
+  if [[ -z "$PDC_NS" ]]; then
+    echo "Error: --pdc-ns <namespace> is mandatory."
+    return 1
   fi
   if [[ -z "$DB_NAME" ]]; then
     echo "Error: --db <name> is mandatory."
@@ -731,12 +778,16 @@ connectiontopdc_cmd(){
   fi
   
   check_global_params || exit 1
-  echo "Namespace: $NS"
-  echo "DB: $DB_NAME  Pod: $POD  Svc: $SVC"
-  echo "Connection name: $NAME ($ACRONYM)"
+  cat <<EOF
+Namespace PDC pod: ${PDC_NS}
+DB name : ${DB_NAME}
+DB pod  : ${POD}
+DB svc  : ${SVC}
+OutputStream Name   : ${NAME}
+EOF
+  
 
-  local ROOTPWD
-  ROOTPWD="$(kubectl get secrets "$SECRET" -n "$NS" -o jsonpath='{.data.root}' | base64 --decode)"
+  ROOTPWD="$(kubectl --context "$DB_CONTEXT" get secrets "$SECRET" -n "$DB_NS" -o jsonpath='{.data.root}' | base64 --decode)"
 
   SQL=$(cat <<EOF
 USE \`${DB_NAME}\`;
@@ -854,15 +905,16 @@ EOSQL
   #echo "----------- END SQL -----------"
 
   
-  printf "%s" "$SQL" | kubectl exec -i "$POD" -c pxc -n "$NS" -- \
+  printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
     mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
 
 #set ns to lower for openPDC pod location
+  sleep 1
   echo "🔄 Reloading openPDC configuration..."
-  if kubectl exec -i "$OPENPDC_POD" -n lower -c openpdc -- bash -lc \
-   "screen -ls | grep -q '\.openpdc' && screen -S openpdc -X stuff $'ReloadConfig\r'" \
-   >/dev/null 2>&1; then
-    sleep 1
+    if kubectl --context "$PDC_CONTEXT" exec -i "$OPENPDC_POD" -n "$PDC_NS" -c openpdc -- bash -lc \
+    "screen -ls | grep -q '\.openpdc' && screen -S openpdc -X stuff $'ReloadConfig\r'" \
+    >/dev/null 2>&1; then
+    sleep 1  
     echo "✅ Configuration successfully reloaded!"
   else
     echo "Impossible to send ReloadConfig to '$OPENPDC_POD'." >&2
@@ -876,7 +928,10 @@ createaccount_cmd() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help) usage_global; return 0;;
-      --ns) NS="$2"; shift 2;;
+      --db-context) DB_CONTEXT="$2"; shift 2;;
+      --openpdc-context) PDC_CONTEXT="$2"; shift 2;;
+      --db-ns) DB_NS="$2"; shift 2;;
+      --pdc-ns) PDC_NS="$2"; shift 2;;
       --cluster-prefix) CLUSTER_PREFIX="$2"; POD="${CLUSTER_PREFIX}-pxc-0"; SVC="${CLUSTER_PREFIX}-haproxy"; SECRET="${CLUSTER_PREFIX}-secrets"; shift 2;;
       --db) DB_NAME="$2"; shift 2;;
       --pod) OPENPDC_POD="$2"; shift 2;;
@@ -890,9 +945,21 @@ createaccount_cmd() {
     esac
   done
 
-  if [[ -z "$NS" ]]; then
-    echo "Error: --ns <namespace> is mandatory."
-    return 1 
+  if [[ -z "$PDC_CONTEXT" ]]; then
+    echo "Error: --openpdc-context <context> is mandatory."
+    return 1
+  fi
+  if [[ -z "$DB_CONTEXT" ]]; then
+    echo "Error: --db-context <context> is mandatory."
+    return 1
+  fi
+  if [[ -z "$DB_NS" ]]; then
+    echo "Error: --db-ns <namespace> is mandatory."
+    return 1
+  fi
+  if [[ -z "$PDC_NS" ]]; then
+    echo "Error: --pdc-ns <namespace> is mandatory."
+    return 1
   fi
   if [[ -z "$DB_NAME" ]]; then
     echo "Error: --db <name> is mandatory."
@@ -920,11 +987,16 @@ createaccount_cmd() {
   fi
 
   check_global_params || exit 1
-  echo "Namespace: $NS"
-  echo "DB: $DB_NAME  Pod: $POD  Svc: $SVC"
-  echo "Creating user account: $USERNAME ($FIRSTNAME $LASTNAME)"
+  cat <<EOF
+  Namespace PDC pod: ${PDC_NS}
+DB name : ${DB_NAME}
+DB pod  : ${POD}
+DB svc  : ${SVC}
+Creating user account: ${USERNAME} (${FIRSTNAME} ${LASTNAME})
+EOF
+ 
   local ROOTPWD
-  ROOTPWD="$(kubectl get secrets "$SECRET" -n "$NS" -o jsonpath='{.data.root}' | base64 --decode)"
+  ROOTPWD="$(kubectl --context "$DB_CONTEXT" get secrets "$SECRET" -n "$DB_NS" -o jsonpath='{.data.root}' | base64 --decode)"
 
   esc() { printf "%s" "$1" | sed "s/'/''/g"; }
   UESC=$(esc "$USERNAME")
@@ -937,10 +1009,8 @@ createaccount_cmd() {
 SET NAMES utf8mb4;
 SET character_set_results = NULL;
 
--- Prende un Node valido (il primo disponibile)
 SET @NodeID := (SELECT ID FROM Node LIMIT 1);
 
--- 1) RUOLI (idempotente)
 INSERT INTO ApplicationRole (ID, Name, Description, NodeID, UpdatedBy, CreatedBy)
 SELECT UUID(), 'Administrator', 'Administrator Role', @NodeID, 'CLI', 'CLI'
 WHERE NOT EXISTS (SELECT 1 FROM ApplicationRole WHERE Name='Administrator' AND NodeID=@NodeID);
@@ -953,12 +1023,10 @@ INSERT INTO ApplicationRole (ID, Name, Description, NodeID, UpdatedBy, CreatedBy
 SELECT UUID(), 'Viewer', 'Viewer Role', @NodeID, 'CLI', 'CLI'
 WHERE NOT EXISTS (SELECT 1 FROM ApplicationRole WHERE Name='Viewer' AND NodeID=@NodeID);
 
--- 2) UTENTE con AUTENTICAZIONE DB (UseADAuthentication = 0)
 INSERT INTO UserAccount (ID, Name, Password, FirstName, LastName, DefaultNodeID, UseADAuthentication, CreatedBy, UpdatedBy)
 SELECT UUID(), '${UESC}', '${PHESC}', '${FESC}', '${LESC}', @NodeID, 0, 'CLI', 'CLI'
 WHERE NOT EXISTS (SELECT 1 FROM UserAccount WHERE Name='${UESC}');
 
--- 3) Collega l'utente al ruolo Administrator (idempotente)
 INSERT INTO ApplicationRoleUserAccount (ApplicationRoleID, UserAccountID)
 SELECT ar.ID, ua.ID
 FROM ApplicationRole ar
@@ -970,7 +1038,6 @@ WHERE ar.Name='Administrator' AND ar.NodeID=@NodeID
     WHERE x.ApplicationRoleID = ar.ID AND x.UserAccountID = ua.ID
   );
 
--- 4) (Facoltativo) registra un accesso positivo a log
 INSERT INTO AccessLog (UserName, AccessGranted) VALUES ('${UESC}', 1);
 SQL_EOF
 )
@@ -980,15 +1047,16 @@ SQL_EOF
 #  echo "----------- END SQL -----------"
 
   
-  printf "%s" "$SQL" | kubectl exec -i "$POD" -c pxc -n "$NS" -- \
-    mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
+  #printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
+    #mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
 
-  #set db to lower for pdc location
+#set ns to lower for openPDC pod location
+  sleep 1
   echo "🔄 Reloading openPDC configuration..."
-  if kubectl exec -i "$OPENPDC_POD" -n lower -c openpdc -- bash -lc \
-   "screen -ls | grep -q '\.openpdc' && screen -S openpdc -X stuff $'ReloadConfig\r'" \
-   >/dev/null 2>&1; then
-   sleep 1
+    if kubectl --context "$PDC_CONTEXT" exec -i "$OPENPDC_POD" -n "$PDC_NS" -c openpdc -- bash -lc \
+    "screen -ls | grep -q '\.openpdc' && screen -S openpdc -X stuff $'ReloadConfig\r'" \
+    >/dev/null 2>&1; then
+    sleep 1  
     echo "✅ Configuration successfully reloaded!"
   else
     echo "Impossible to send ReloadConfig to '$OPENPDC_POD'." >&2
