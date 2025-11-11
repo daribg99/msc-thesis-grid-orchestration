@@ -146,15 +146,21 @@ check_global_params(){
 }
 
 run_mysql() {
+  local DB_CONTEXT="$1"; shift
+  local DB_NS="$1"; shift
   local POD="$1"; shift
   local SVC="$1"; shift
   local ROOTPWD="$1"; shift
-  local DB="$1"; shift
-  local SQL="$1"
+  local DB_NAME="$1"; shift
+  local SQL="$1"; shift
+  local PDC_CONTEXT="$1"; shift
+  local PDC_NS="$1"; shift
+  local OPENPDC_POD="$1"
 
   set +e
   local out rc dup_msg
-  out="$(printf "%s" "$SQL" | kubectl exec -i "$POD" -c pxc -n "$NS" -- env MYSQL_PWD="$ROOTPWD" mysql -h "$SVC" -uroot --database "$DB" --batch --silent 2>&1)"
+  out="$(printf "%s" "$SQL" | kubectl ${DB_CONTEXT:+--context "$DB_CONTEXT"} exec -i "$POD" -c pxc -n "$DB_NS" -- \
+    mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent 2>&1)"
   rc=$?
   set -e
 
@@ -170,8 +176,22 @@ run_mysql() {
     fi
   fi
 
+  # --- Reload openPDC configuration ---
+  sleep 1
+  echo "🔄 Reloading openPDC configuration..."
+  if kubectl ${PDC_CONTEXT:+--context "$PDC_CONTEXT"} exec -i "$OPENPDC_POD" -n "$PDC_NS" -c openpdc -- bash -lc \
+    "screen -ls | grep -q '\.openpdc' && screen -S openpdc -X stuff $'ReloadConfig\r'" >/dev/null 2>&1; then
+    sleep 1
+    echo "✅ Configuration successfully reloaded!"
+  else
+    echo "⚠️  Impossible to send ReloadConfig to '$OPENPDC_POD'." >&2
+    echo "   Check that openPDC is running inside a screen session called 'openpdc'." >&2
+    echo "   Otherwise, run ReloadConfig via the openPDC Manager." >&2
+  fi
+
   return 0
 }
+
 
 addpmu_cmd() {
       
@@ -371,22 +391,7 @@ EOF
 #printf "%s\n" "$SQL"
 #echo "----------- END SQL -----------"
 
-printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
-  mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
-
-#run_mysql "$POD" "$SVC" "$ROOTPWD" "$DB_NAME" "$SQL"
-
-sleep 1
-echo "🔄 Reloading openPDC configuration..."
-  if kubectl --context "$PDC_CONTEXT" exec -i "$OPENPDC_POD" -n "$PDC_NS" -c openpdc -- bash -lc \
-   "screen -ls | grep -q '\.openpdc' && screen -S openpdc -X stuff $'ReloadConfig\r'" \
-   >/dev/null 2>&1; then
-  sleep 1  
-  echo "✅ Configuration successfully reloaded!"
-else
-  echo "Impossible to send ReloadConfig to '$OPENPDC_POD'." >&2
-  echo "Check that openPDC is running inside a screen session called 'openpdc'. Otherwise, run the ReloadConfig via the openPDC Manager." >&2
-fi
+run_mysql "$DB_CONTEXT" "$DB_NS" "$POD" "$SVC" "$ROOTPWD" "$DB_NAME" "$SQL" "$PDC_CONTEXT" "$PDC_NS" "$OPENPDC_POD"
 
 echo "[OK] PMU '$NAME' ($ACRONYM) successfully added on db '$DB_NAME'."
 
@@ -564,22 +569,12 @@ SQL+="$BLOCK"
     #echo "---------- BEGIN SQL ----------"
     #printf "%s\n" "$SQL"
     #echo "----------- END SQL -----------"
-  printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
-    mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
+  #printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
+    #mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
 
-  #run_mysql "$POD" "$SVC" "$ROOTPWD" "$DB_NAME" "$SQL"
+run_mysql "$DB_CONTEXT" "$DB_NS" "$POD" "$SVC" "$ROOTPWD" "$DB_NAME" "$SQL" "$PDC_CONTEXT" "$PDC_NS" "$OPENPDC_POD"
 
-  sleep 1
-  echo "🔄 Reloading openPDC configuration..."
-    if kubectl --context "$PDC_CONTEXT" exec -i "$OPENPDC_POD" -n "$PDC_NS" -c openpdc -- bash -lc \
-    "screen -ls | grep -q '\.openpdc' && screen -S openpdc -X stuff $'ReloadConfig\r'" \
-    >/dev/null 2>&1; then
-    sleep 1  
-    echo "✅ Configuration successfully reloaded!"
-  else
-    echo "Impossible to send ReloadConfig to '$OPENPDC_POD'." >&2
-    echo "Check that openPDC is running inside a screen session called 'openpdc'. Otherwise, run the ReloadConfig via the openPDC Manager." >&2
-  fi
+  
 
   echo  "[OK] OutputStream '${NAME}' (${ACRONYM}) successfully created with PMUs: ${PMUS}"
 }
@@ -696,6 +691,8 @@ EOF
 
   #printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
     #mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
+
+  #run_mysql "$DB_CONTEXT" "$DB_NS" "$POD" "$SVC" "$ROOTPWD" "$DB_NAME" "$SQL" "$PDC_CONTEXT" "$PDC_NS" "$OPENPDC_POD"
 
 #set ns to lower for openPDC pod location
   sleep 1
@@ -907,6 +904,7 @@ EOSQL
   
   printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
     mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
+#run_mysql "$DB_CONTEXT" "$DB_NS" "$POD" "$SVC" "$ROOTPWD" "$DB_NAME" "$SQL" "$PDC_CONTEXT" "$PDC_NS" "$OPENPDC_POD"
 
 #set ns to lower for openPDC pod location
   sleep 1
@@ -1049,6 +1047,7 @@ SQL_EOF
   
   #printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
     #mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
+run_mysql "$DB_CONTEXT" "$DB_NS" "$POD" "$SVC" "$ROOTPWD" "$DB_NAME" "$SQL" "$PDC_CONTEXT" "$PDC_NS" "$OPENPDC_POD"
 
 #set ns to lower for openPDC pod location
   sleep 1
