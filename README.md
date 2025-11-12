@@ -5,3 +5,10 @@ This repository contains drafts, experiments and notes for the thesis. The work 
 Status
 - 🔧 In development
 - 📅 Last updated: 11 November 2025
+
+Folders content:
+- `cli/`: command-line interface to configure PDCs
+- `deploy/`: deployment for PDCs and PMUs
+- `deploy_automation/`: script to automate deployment
+- `modeling_algorithms/`: placement and visualization algorithms for PDCs
+- `reinforcement-learning/`: testing RL algorithms for PDC placement 
