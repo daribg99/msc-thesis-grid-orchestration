@@ -32,7 +32,7 @@ spec:
             - name: DB_PORT
               value: "30950"
             - name: DB_URL
-              value: "172.18.0.2"
+              value: "172.18.0.9"
             - name: SAMPLE_DATASET
               value: "true"
       containers:
@@ -48,7 +48,7 @@ spec:
             - name: DB_PORT
               value: "30950"
             - name: DB_URL
-              value: "172.18.0.2"
+              value: "172.18.0.9"
             - name: NODE_ID
               value: e7a5235d-cb6f-4864-a96e-a8686f36e599
         #livenessProbe:

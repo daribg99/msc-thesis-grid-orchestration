@@ -28,7 +28,7 @@ spec:
             - name: DB_PASS
               value: password
             - name: DB_NAME
-              value: cluster2
+              value: cluster4
             - name: DB_PORT
               value: "30950"
             - name: DB_URL
@@ -44,7 +44,7 @@ spec:
             - name: DB_PASS
               value: password
             - name: DB_NAME
-              value: cluster2
+              value: cluster4
             - name: DB_PORT
               value: "30950"
             - name: DB_URL
