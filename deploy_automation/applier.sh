@@ -99,8 +99,8 @@ normalize_to_ctx() {
 wait_for_percona_ready() {
   local ctx="$1"   # es: k3d-cluster-db
   local ns="db"
-  local timeout_sec=1200    # 20 minutes
-  local interval_sec=20
+  local timeout_sec=7200    # 2 hours
+  local interval_sec=30   # 30 seconds
 
   echo "⏱️  Waiting for Percona XtraDB Cluster in context '$ctx' (ns=$ns) to become READY. The operation may take several minutes..."
 
@@ -129,7 +129,7 @@ wait_for_percona_ready() {
   while (( elapsed < timeout_sec )); do
     local status
     status="$(kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" get perconaxtradbcluster "$pxc_name" \
-      -o jsonpath='{.status.status}' 2>/dev/null || true)"
+      -o jsonpath='{.status.state}' 2>/dev/null || true)"
 
     if [[ "$status" == "ready" ]]; then
       echo "   ✅ PerconaXtraDBCluster '$pxc_name' is READY (status=$status)."
@@ -355,32 +355,64 @@ for c in "${ORDERED_CLUSTERS[@]}"; do
     | kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" apply -f - >/dev/null
 
   # 2) Preparing patched YAML file for this cluster
-  #    - DB_NAME: cluster1/cluster2/...  (removing the '-')
-  #    - DB_URL:  IP of the DB (from docker inspect)
-  db_name_no_dash="$(echo "$cname" | sed 's/-//')"
+#    - DB_NAME: cluster1/cluster2/...  (removing the '-')
+#    - DB_URL:  IP of the DB (from docker inspect)
+#    - Service name: openpdc-low-<cluster> (per distinguerlo negli script)
 
-  TMP_PER_CLUSTER="$(mktemp)"
+db_name_no_dash="$(echo "$cname" | sed 's/-//')"
+svc_name="openpdc-low-$db_name_no_dash"
 
-  echo "   🛠️  Patch con awk (DB_NAME=$db_name_no_dash, DB_URL=$DB_IP)..."
-  awk -v db="$db_name_no_dash" -v ip="$DB_IP" '
-    /name:[[:space:]]*DB_NAME/ {
-      print
-      if (getline line) {
-        sub(/value:.*/, "value: " db, line)
-        print line
-      }
-      next
+TMP_PER_CLUSTER="$(mktemp)"
+
+echo "   🛠️  Patch con awk (DB_NAME=$db_name_no_dash, DB_URL=$DB_IP, SVC_NAME=$svc_name)..."
+awk -v db="$db_name_no_dash" -v ip="$DB_IP" -v svc="$svc_name" '
+  BEGIN {
+    isService = 0
+  }
+
+  # Riconosco quando sono dentro alla definizione del Service
+  /^kind:[[:space:]]*Service/ {
+    isService = 1
+    print
+    next
+  }
+  /^kind:/ {
+    # Qualsiasi altro kind fa uscire dalla sezione Service
+    isService = 0
+    print
+    next
+  }
+
+  # Dentro al Service, rinomino metadata.name: openpdc-low -> openpdc-low-<cluster>
+  isService && $1 == "name:" && $2 == "openpdc-low" {
+    sub(/openpdc-low$/, svc)
+    print
+    next
+  }
+
+  # Patch DB_NAME (env nel Deployment)
+  /name:[[:space:]]*DB_NAME/ {
+    print
+    if (getline line) {
+      sub(/value:.*/, "value: " db, line)
+      print line
     }
-    /name:[[:space:]]*DB_URL/ {
-      print
-      if (getline line) {
-        sub(/value:.*/, "value: \"" ip "\"", line)
-        print line
-      }
-      next
+    next
+  }
+
+  # Patch DB_URL (env nel Deployment)
+  /name:[[:space:]]*DB_URL/ {
+    print
+    if (getline line) {
+      sub(/value:.*/, "value: \"" ip "\"", line)
+      print line
     }
-    { print }
-  ' "$TMP_RAW" > "$TMP_PER_CLUSTER"
+    next
+  }
+
+  # Default: copia la riga così com’è
+  { print }
+' "$TMP_RAW" > "$TMP_PER_CLUSTER"
 
   # 3) Applico sul cluster target
   echo "   📥 kubectl apply -n $NAMESPACE -f <patched>"
