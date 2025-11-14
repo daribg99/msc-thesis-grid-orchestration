@@ -186,7 +186,7 @@ for raw in "${ORDERED_CLUSTERS[@]}"; do
 
   echo "   ➕ Creating k3d cluster '$cname' (ports: $p1:30085, $p2:30065, $p3:30099)..."
   k3d cluster create "$cname" \
-    --image rancher/k3s:v1.24.17-k3s1 \
+    --image rancher/k3s:v1.29.4-k3s1 \
     -p "${p1}:30085@server:0" \
     -p "${p2}:30065@server:0" \
     -p "${p3}:30099@server:0" \
@@ -201,8 +201,9 @@ echo
 # --- Creation (only once) of the cluster-db ---
 DB_CLUSTER="cluster-db"
 echo "🏗️  Ensuring k3d cluster '$DB_CLUSTER' exists (DB cluster)..."
-
+CLUSTER_DB_EXISTS=0
 if printf '%s\n' "${EXISTING_CLUSTERS[@]}" | grep -qx "$DB_CLUSTER"; then
+  CLUSTER_DB_EXISTS=1
   echo "   ✅ Cluster '$DB_CLUSTER' already exists, skipping creation"
 else
   echo "   ➕ Creating k3d cluster '$DB_CLUSTER'..."
@@ -289,24 +290,27 @@ if ! kubectl --kubeconfig "$MERGED" --context "$DB_CTX" get ns db >/dev/null 2>&
   kubectl --kubeconfig "$MERGED" --context "$DB_CTX" create ns db
 fi
 
-echo "   📥 Applying Percona manifest in the cluster-db..."
-# CRD (cluster-scoped, without -n)
-kubectl --kubeconfig "$MERGED" --context "$DB_CTX" apply -f "$PERCONA_DIR/crd.yaml"
+if [ "$CLUSTER_DB_EXISTS" -eq 0 ]; then
+  echo "   📥 Applying Percona manifest in the cluster-db..."
+  # CRD (cluster-scoped, without -n)
+  kubectl --kubeconfig "$MERGED" --context "$DB_CTX" apply -f "$PERCONA_DIR/crd.yaml"
 
-# Everything else inside ns db
-kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/rbac.yaml"
-kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/operator.yaml"
-kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/secrets.yaml"
-kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/cr.yaml"
-kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/np-svc.yaml"
+  # Everything else inside ns db
+  kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/rbac.yaml"
+  kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/operator.yaml"
+  kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/secrets.yaml"
+  kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/cr.yaml"
+  kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/np-svc.yaml"
 
-echo "   ✅ Percona XtraDB manifest applied (operator + cluster + secrets)."
-echo
+  echo "   ✅ Percona XtraDB manifest applied (operator + cluster + secrets)."
+  echo
 
-# Wait for PerconaXtraDBCluster to become READY
-wait_for_percona_ready "$DB_CTX" || echo "   ⚠️  Continuing anyway with the deploy of PDC."
-echo
-
+  # Wait for PerconaXtraDBCluster to become READY
+  wait_for_percona_ready "$DB_CTX" || echo "   ⚠️  Continuing anyway with the deploy of PDC."
+  echo
+else 
+  echo "   ✅ Percona XtraDB already set up in cluster-db, skipping manifest application."
+fi 
 
 # --- Preparing DB data: IP and secret ---
 echo "🔗 Retrieving DB IP (container k3d-cluster-db-server-0 on mc-net)..."
@@ -349,10 +353,21 @@ for c in "${ORDERED_CLUSTERS[@]}"; do
   fi
 
   # 1) Copy secret from DB cluster → target cluster (lower namespace)
-  echo "   🔐 Sync secret 'cluster-db-secrets' from DB → $ctx/$NAMESPACE ..."
-  kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db get secret cluster-db-secrets -o yaml \
-    | sed 's/^  namespace: db/  namespace: '"$NAMESPACE"'/; s/^metadata:\n  name: .*/metadata:\n  name: cluster-db-secrets/' \
-    | kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" apply -f - >/dev/null
+echo "   🔐 Sync secret 'cluster-db-secrets' from DB → $ctx/$NAMESPACE ..."
+
+kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db get secret cluster-db-secrets -o yaml \
+  | sed '
+      /resourceVersion:/d
+      /uid:/d
+      /creationTimestamp:/d
+      /selfLink:/d
+      /managedFields:/,/^[^ ]/d
+      /^  namespace:/d
+    ' \
+  | sed "s/^metadata:\n  name: .*/metadata:\n  name: cluster-db-secrets/" \
+  | sed "s/^metadata:$/metadata:\n  namespace: $NAMESPACE/" \
+  | kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" apply -f - >/dev/null
+
 
   # 2) Preparing patched YAML file for this cluster
 #    - DB_NAME: cluster1/cluster2/...  (removing the '-')
