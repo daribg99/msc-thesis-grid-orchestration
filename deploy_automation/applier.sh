@@ -384,28 +384,21 @@ awk -v db="$db_name_no_dash" -v ip="$DB_IP" -v svc="$svc_name" '
   BEGIN {
     isService = 0
   }
-
-  # Riconosco quando sono dentro alla definizione del Service
   /^kind:[[:space:]]*Service/ {
     isService = 1
     print
     next
   }
   /^kind:/ {
-    # Qualsiasi altro kind fa uscire dalla sezione Service
     isService = 0
     print
     next
   }
-
-  # Dentro al Service, rinomino metadata.name: openpdc-low -> openpdc-low-<cluster>
   isService && $1 == "name:" && $2 == "openpdc-low" {
     sub(/openpdc-low$/, svc)
     print
     next
   }
-
-  # Patch DB_NAME (env nel Deployment)
   /name:[[:space:]]*DB_NAME/ {
     print
     if (getline line) {
@@ -414,8 +407,6 @@ awk -v db="$db_name_no_dash" -v ip="$DB_IP" -v svc="$svc_name" '
     }
     next
   }
-
-  # Patch DB_URL (env nel Deployment)
   /name:[[:space:]]*DB_URL/ {
     print
     if (getline line) {
@@ -443,4 +434,4 @@ awk -v db="$db_name_no_dash" -v ip="$DB_IP" -v svc="$svc_name" '
 done
 
 echo "🎯 Done. You can see pod and svc by running:"
-echo "   kubectl --kubeconfig \"$MERGED\" --context <context> -n <namespace> get pods,svc"
+echo "kubectl --kubeconfig \"$MERGED\" --context <context> -n <namespace> get pods,svc"
