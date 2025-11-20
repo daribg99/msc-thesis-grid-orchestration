@@ -1,17 +1,17 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: openpdc-lower
+  name: openpdc
 spec:
   selector:
     matchLabels:
-      app: openpdc-high
+      app: openpdc
   strategy:
     type: Recreate
   template:
     metadata:
       labels:
-        app: openpdc-high
+        app: openpdc
     spec:
       initContainers:
       - name: openpdc-init
@@ -23,38 +23,31 @@ spec:
                   name: cluster-db-secrets
                   key: root
             - name: DB_USER
-              value: openpdch
+              value: openpdc
             - name: DB_PASS
               value: password
             - name: DB_NAME
-              value: higher
+              value: lower
             - name: DB_PORT
-              value: "3306"
+              value: "30950"
             - name: DB_URL
-              value: cluster1-haproxy.higher.svc.cluster.local
+              value: "172.18.0.9"
       containers:
       - name: openpdc
         image: claudious96/openpdc:latest
         env:
             - name: DB_USER
-              value: openpdch
+              value: openpdc
             - name: DB_PASS
               value: password
             - name: DB_NAME
-              value: higher
+              value: lower
             - name: DB_PORT
-              value: "3306"
+              value: "30950"
             - name: DB_URL
-              value: cluster1-haproxy.higher.svc.cluster.local
+              value: "172.18.0.9"
             - name: NODE_ID
-              value: 80104a12-a0de-435a-aa74-c93bade70a24
-        livenessProbe:
-          exec:
-            command:
-                - /bin/sh
-                - liveness.sh
-          initialDelaySeconds: 10
-          periodSeconds: 10
+              value: e7a5235d-cb6f-4864-a96e-a8686f36e599
         ports:
         - name: outputstream
           containerPort: 4712
@@ -71,20 +64,20 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: openpdc-high
+  name: openpdc
 spec:
   type: NodePort
   ports:
     - name: console
       port: 8500
       targetPort: 8500
-      nodePort: 30185
+      nodePort: 30085
     - name: outputstream
       port: 4712
-      nodePort: 30199
+      nodePort: 30099
     - name: datapublisher
       port: 6165
       targetPort: 6165
-      nodePort: 30165
+      nodePort: 30065
   selector:
-    app: openpdc-high
+    app: openpdc
