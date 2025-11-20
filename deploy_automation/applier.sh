@@ -251,7 +251,7 @@ echo "✅ Merged kubeconfig created successfully into $MERGED"
 echo
 
 NAMESPACE="lower"
-RAW_URL="https://raw.githubusercontent.com/daribg99/TESI/refs/heads/main/deploy/openpdc-cluster-1.yaml"
+RAW_URL="https://raw.githubusercontent.com/daribg99/TESI/refs/heads/main/deploy/openpdc.yaml"
 
 if ! curl -fsI "$RAW_URL" >/dev/null; then
   echo "❌ Manifest unreachable (404?): $RAW_URL" >&2
@@ -375,7 +375,7 @@ kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db get secret cluster-db-s
 #    - Service name: openpdc-low-<cluster> (per distinguerlo negli script)
 
 db_name_no_dash="$(echo "$cname" | sed 's/-//')"
-svc_name="openpdc-low-$db_name_no_dash"
+svc_name="openpdc-$db_name_no_dash"
 
 TMP_PER_CLUSTER="$(mktemp)"
 
@@ -394,8 +394,8 @@ awk -v db="$db_name_no_dash" -v ip="$DB_IP" -v svc="$svc_name" '
     print
     next
   }
-  isService && $1 == "name:" && $2 == "openpdc-low" {
-    sub(/openpdc-low$/, svc)
+  isService && $1 == "name:" && $2 == "openpdc" {
+    sub(/openpdc$/, svc)
     print
     next
   }
@@ -416,7 +416,6 @@ awk -v db="$db_name_no_dash" -v ip="$DB_IP" -v svc="$svc_name" '
     next
   }
 
-  # Default: copia la riga così com’è
   { print }
 ' "$TMP_RAW" > "$TMP_PER_CLUSTER"
 

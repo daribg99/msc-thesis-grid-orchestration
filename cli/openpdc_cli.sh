@@ -90,7 +90,7 @@ Examples:
   
   $0 createhistorian --db-context k3d-cluster-db --openpdc-context k3d-cluster-2 --db-ns db --pdc-ns lower --db cluster2 --pod <podname>
   
-  $0 connectiontopdc --db-context k3d-cluster-db --openpdc-context k3d-cluster-2 --db-ns db --pdc-ns lower --db cluster2 --name "lowerpdc" --pod <podname> --acronym "LOWER" --server "openpdc-low"  --pmus "PMU-1,PMU-2,PMU-3"
+  $0 connectiontopdc --db-context k3d-cluster-db --openpdc-context k3d-cluster-2 --db-ns db --pdc-ns lower --db cluster2 --name "lowerpdc" --pod <podname> --acronym "LOWER" --server "openpdc"  --pmus "PMU-1,PMU-2,PMU-3"
   
   $0 createaccount --db-context k3d-cluster-db --openpdc-context k3d-cluster-2 --db-ns db --pdc-ns lower --db cluster2 --pod <podname> --username polito --password Polito00 --firstname polito --lastname rse
 USAGE
@@ -295,21 +295,7 @@ SQL=$(cat <<EOF
 USE \`${DB_NAME}\`;
 SET @NodeID := (SELECT ID FROM Node LIMIT 1);
 SET @UniqueID := UUID();
-SET @AccessID := (
-    SELECT 
-        CASE 
-            WHEN NOT EXISTS (SELECT 1 FROM Device WHERE AccessID = 1) 
-                THEN 1
-            ELSE (
-                SELECT t.AccessID + 1
-                FROM Device t
-                LEFT JOIN Device t2 ON t2.AccessID = t.AccessID + 1
-                WHERE t2.AccessID IS NULL
-                ORDER BY t.AccessID
-                LIMIT 1
-            )
-        END
-);
+SET @AccessID := CAST(SUBSTRING_INDEX('${ACRONYM}', '-', -1) AS UNSIGNED);
 INSERT INTO Device (
   NodeID, ParentID, UniqueID, Acronym, Name, IsConcentrator, CompanyID, HistorianID,
   AccessID, VendorDeviceID, ProtocolID, Longitude, Latitude, InterconnectionID,
