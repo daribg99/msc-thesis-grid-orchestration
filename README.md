@@ -4,7 +4,7 @@ This repository contains drafts, experiments and notes for the thesis. The work 
 
 Status
 - 🔧 In development
-- 📅 Last updated: 20 November 2025
+- 📅 Last updated: 21 November 2025
 
 Folders content:
 - `cli/`: command-line interface to configure PDCs
