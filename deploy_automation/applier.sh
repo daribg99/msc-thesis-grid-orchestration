@@ -191,6 +191,7 @@ for raw in "${ORDERED_CLUSTERS[@]}"; do
     -p "${p2}:30065@server:0" \
     -p "${p3}:30099@server:0" \
     --agents 1 \
+    --k3s-arg "--flannel-iface=eth0"@server:0 \
     --network mc-net
 
   # Update the list of existing clusters in memory
