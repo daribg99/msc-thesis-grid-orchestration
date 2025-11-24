@@ -6,13 +6,6 @@ import time
 from collections import defaultdict, deque
 
 
-def get_openpdc_port(cluster):
-    """
-    Placeholder: qui puoi inserire una vera tabella porte.
-    """
-    return 30000 + abs(hash(cluster)) % 1000
-
-
 # --------------------------------------------------------
 #   HELPER: run command
 # --------------------------------------------------------
@@ -21,6 +14,11 @@ def run_cmd(cmd):
     print(f"\n>>> RUNNING:\n{cmd}\n")
     #subprocess.run(cmd, shell=True, check=True)
 
+def get_openpdc_port(cluster):
+    """
+    Placeholder: qui puoi inserire una vera tabella porte.
+    """
+    return 30000 + abs(hash(cluster)) % 1000
 
 def get_pdc_pod(cluster):
     context=cluster_to_context(cluster)
@@ -50,7 +48,43 @@ def cluster_to_context(cluster):
 def cluster_number(cluster):
     return cluster.replace("cluster", "")
 
+def print_operation_plan(order, config):
+    print("\n=== ORDER OF OPERATIONS (bottom → top) ===\n")
 
+    for cluster in order:
+        print(f"Cluster {cluster}:")
+        if config[cluster]["pmu_direct"]:
+            print("  - addpmu")
+        if config[cluster]["connections_downstream"]:
+            print("  - connectiontopdc")
+        print("  - createoutputstream")
+        print()
+
+def wait_for_pdc_ready(cluster, timeout=7200):
+    context = cluster_to_context(cluster)
+    start = time.time()
+
+    print(f"\n⏳ Waiting for PDC in {cluster} to become Running. The operation may take several minutes...")
+
+    while True:
+        cmd = (
+            f"kubectl --context {context} get pods -n lower "
+            f"-o jsonpath='{{.items[?(@.metadata.name contains \"openpdc\")].status.phase}}'"
+        )
+        try:
+            status = subprocess.check_output(cmd, shell=True).decode().strip()
+        except subprocess.CalledProcessError:
+            status = ""
+
+        if status == "Running":
+            print(f"✅ PDC in {cluster} is Running. Configuration can proceed...")
+            return
+
+        if time.time() - start > timeout:
+            print(f"\n❌ ERROR: PDC in {cluster} did NOT become Running within {timeout} seconds.")
+            sys.exit(1)
+
+        time.sleep(2)
 
 # --------------------------------------------------------
 #   Construction of PDC configuration from paths
@@ -158,52 +192,9 @@ def compute_order(paths_json):
 
     return order
 
-
 # --------------------------------------------------------
-#   Print operation plan
+#   EXECUTE EVERYTHING 
 # --------------------------------------------------------
-
-def print_operation_plan(order, config):
-    print("\n=== ORDER OF OPERATIONS (bottom → top) ===\n")
-
-    for cluster in order:
-        print(f"Cluster {cluster}:")
-        if config[cluster]["pmu_direct"]:
-            print("  - addpmu")
-        if config[cluster]["connections_downstream"]:
-            print("  - connectiontopdc")
-        print("  - createoutputstream")
-        print()
-
-
-# --------------------------------------------------------
-#   EXECUTE EVERYTHING (MISSILE MODE C3)
-# --------------------------------------------------------
-def wait_for_pdc_ready(cluster, timeout=7200):
-    context = cluster_to_context(cluster)
-    start = time.time()
-
-    print(f"\n⏳ Waiting for PDC in {cluster} to become Running...")
-
-    while True:
-        cmd = (
-            f"kubectl --context {context} get pods -n lower "
-            f"-o jsonpath='{{.items[?(@.metadata.name contains \"openpdc\")].status.phase}}'"
-        )
-        try:
-            status = subprocess.check_output(cmd, shell=True).decode().strip()
-        except subprocess.CalledProcessError:
-            status = ""
-
-        if status == "Running":
-            print(f"✅ PDC in {cluster} is Running. Configuration can proceed...")
-            return
-
-        if time.time() - start > timeout:
-            print(f"\n❌ ERROR: PDC in {cluster} did NOT become Running within {timeout} seconds.")
-            sys.exit(1)
-
-        time.sleep(2)
         
 def execute_all(order, config):
     for cluster in order:
