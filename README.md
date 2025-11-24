@@ -7,8 +7,7 @@ Status
 - 📅 Last updated: 21 November 2025
 
 Folders content:
-- `cli/`: command-line interface to configure PDCs
 - `deploy/`: deployment for PDCs and PMUs
-- `deploy_automation/`: script to automate deployment
+- `deploy_automation/`: script to automate deployment, including applier for topology-based configuration and cli for automatic configuration
 - `modeling_algorithms/`: placement and visualization algorithms for PDCs
 - `reinforcement-learning/`: testing RL algorithms for PDC placement 

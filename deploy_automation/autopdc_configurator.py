@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import sys
+import subprocess
 from collections import defaultdict, deque
 
 
@@ -12,16 +13,53 @@ def get_openpdc_port(cluster):
 
 
 # --------------------------------------------------------
+#   HELPER: run command
+# --------------------------------------------------------
+
+def run_cmd(cmd):
+    print(f"\n>>> RUNNING:\n{cmd}\n")
+    #subprocess.run(cmd, shell=True, check=True)
+
+
+def get_pdc_pod(cluster):
+    context=cluster_to_context(cluster)
+    cmd = f"kubectl --context {context} get pods -n lower -o jsonpath='{{.items[*].metadata.name}}'"
+    out = subprocess.check_output(cmd, shell=True).decode().split()
+    pods = [p for p in out if "openpdc" in p]
+    if not pods:
+        raise RuntimeError(f"No openpdc pod found in {cluster}")
+    return pods[0]
+
+
+def get_node_ip(cluster):
+    context = cluster_to_context(cluster)
+    cmd = f"kubectl --context {context} get nodes -o wide | awk 'NR==2 {{print $6}}'"
+    return subprocess.check_output(cmd, shell=True).decode().strip()
+
+
+def calc_port(child_cluster):
+    num = int(child_cluster.replace("cluster", ""))
+    return int(f"30{num-1}99")   # e.g., cluster4 → 30399
+
+def cluster_to_context(cluster):
+    # cluster arrives as "clusterX"
+    number = cluster.replace("cluster", "")
+    return f"k3d-cluster-{number}"
+
+def build_acronym(cluster):
+    num = cluster.replace("cluster", "")
+    return f"C{num}LOW"
+
+
+# --------------------------------------------------------
 #   Construction of PDC configuration from paths
 # --------------------------------------------------------
 
 def build_pdc_topology(paths_json):
     paths = paths_json["paths"]
-
-    # final dictionary
     config = {}
 
-    # === 1) Initialization of clusters ===
+    # Initialization
     for path in paths:
         pmu = path[0]
         clusters = path[1:]
@@ -34,12 +72,11 @@ def build_pdc_topology(paths_json):
                     "connections_downstream": []
                 }
 
-        # leaf cluster (second element in path)
         leaf = clusters[0]
         config[leaf]["pmu_direct"].append(pmu)
         config[leaf]["outputstream"].add(pmu)
 
-    # === 2) Propagation of PMU and creation of connections ===
+    # Propagation + connections
     for path in paths:
         pmu = path[0]
         clusters = path[1:]
@@ -48,7 +85,6 @@ def build_pdc_topology(paths_json):
             child = clusters[i - 1]
             parent = clusters[i]
 
-            # Propagate PMU to the parent
             config[parent]["outputstream"].add(pmu)
 
             existing = None
@@ -58,18 +94,16 @@ def build_pdc_topology(paths_json):
                     break
 
             if existing:
-                # add PMU to the list, avoiding duplicates
                 if pmu not in existing["pmus"]:
                     existing["pmus"].append(pmu)
             else:
-                # create a new downstream connection
                 config[parent]["connections_downstream"].append({
                     "node": child,
                     "pmus": [pmu],
-                    "port": get_openpdc_port(child)
+                    "port": calc_port(child)
                 })
 
-    # === 3) Convert sets to lists ===
+    # sets → lists
     for c in config:
         config[c]["outputstream"] = list(config[c]["outputstream"])
 
@@ -77,46 +111,40 @@ def build_pdc_topology(paths_json):
 
 
 # --------------------------------------------------------
-#   Construction of dependencies (only on PATHS)
+#   Construction of dependencies (ordering)
 # --------------------------------------------------------
 
 def compute_order(paths_json):
     paths = paths_json["paths"]
 
-    deps = defaultdict(set)    # parent -> children that must come BEFORE
+    deps = defaultdict(set)
     all_clusters = set()
 
     for path in paths:
-        pmu = path[0]
-        nodes = path[1:]   # cluster1, cluster3, cluster6 ...
+        nodes = path[1:]
 
-        # nodes seen
         for n in nodes:
             all_clusters.add(n)
 
-        # create dependencies
         for i in range(1, len(nodes)):
             child = nodes[i - 1]
             parent = nodes[i]
             deps[parent].add(child)
 
-    # be sure all clusters are in deps
     for c in all_clusters:
         if c not in deps:
             deps[c] = set()
 
-    # --- Topological sort ---
-    in_degree = {c: 0 for c in all_clusters} # count of requisites on each node
+    in_degree = {c: 0 for c in all_clusters}
 
     for parent, children in deps.items():
         for child in children:
             in_degree[parent] += 1
 
-    # nodes without dependencies
     queue = deque([c for c in all_clusters if in_degree[c] == 0])
     order = []
 
-    # Kahn's algorithm for topological sorting: extract nodes with minimum in-degree
+    # Kahn
     while queue:
         node = queue.popleft()
         order.append(node)
@@ -148,6 +176,88 @@ def print_operation_plan(order, config):
 
 
 # --------------------------------------------------------
+#   EXECUTE EVERYTHING (MISSILE MODE C3)
+# --------------------------------------------------------
+
+def execute_all(order, config):
+    for cluster in order:
+        context = cluster_to_context(cluster)
+        
+        cmd_check = f"kubectl config get-contexts -o name | grep '^{context}$'"
+        result = subprocess.run(cmd_check, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode != 0:
+            print(f"\n❌ ERROR: Kubernetes context '{context}' does not exist.\n"
+                  f"   This means the cluster '{cluster}' is referenced in the PATHS JSON \n"
+                  f"   but does not exist in your system.\n"
+                  f"   Aborting MISSILE MODE to avoid half-applied configuration.\n")
+            sys.exit(1)
+        
+        db = cluster
+        pod = get_pdc_pod(cluster)
+
+        print(f"\n==============================")
+        print(f" CONFIGURING {cluster}")
+        print(f"==============================\n")
+
+        # 1) ADDPMU
+        for pmu in config[cluster]["pmu_direct"]:
+            pmu_name = pmu.replace("PMU", "Pmu")
+
+            cmd = (
+                f"./openpdc_cli.sh addpmu "
+                f"--db-context k3d-cluster-db "
+                f"--openpdc-context {context} "
+                f"--db-ns db --pdc-ns lower "
+                f"--name \"{pmu_name}\" "
+                f"--pod {pod} "
+                f"--db {db}"
+            )
+            run_cmd(cmd)
+
+        # 2) CONNECTION
+        for conn in config[cluster]["connections_downstream"]:
+            child = conn["node"]
+            pmus = ",".join(conn["pmus"])
+            server_ip = get_node_ip(child)
+            port = calc_port(child)
+            name = f"lower{child}"
+            acronym = build_acronym(cluster)
+            
+            cmd = (
+                f"./openpdc_cli.sh connectiontopdc "
+                f"--db-context k3d-cluster-db "
+                f"--openpdc-context {context} "
+                f"--db-ns db --pdc-ns lower "
+                f"--db {db} "
+                f"--name \"{name}\" "
+                f"--pod {pod} "
+                f"--acronym {acronym} "
+                f"--server \"{server_ip}\" "
+                f"--port {port} "
+                f"--pmus \"{pmus}\""
+            )
+            run_cmd(cmd)
+
+        # 3) OUTPUTSTREAM
+        pmus = ",".join(config[cluster]["outputstream"])
+        name = f"output{cluster}"
+        acronym = build_acronym(cluster)
+
+        cmd = (
+            f"./openpdc_cli.sh createoutputstream "
+            f"--db-context k3d-cluster-db "
+            f"--openpdc-context {context} "
+            f"--db-ns db --pdc-ns lower "
+            f"--db {db} "
+            f"--pod {pod} "
+            f"--acronym {acronym} "
+            f"--name {name} "
+            f"--pmus \"{pmus}\""
+        )
+        run_cmd(cmd)
+
+
+# --------------------------------------------------------
 #   MAIN
 # --------------------------------------------------------
 
@@ -167,15 +277,16 @@ def main():
 
     config = build_pdc_topology(data)
 
-    # PRINT CONFIG
     print("=== CONFIG GENERATED ===")
     print(json.dumps(config, indent=4))
 
-    # COMPUTE ORDER
     order = compute_order(data)
 
-    # PRINT ORDER
     print_operation_plan(order, config)
+
+    print("\n\n🚀 MISSILE MODE ENABLED — EXECUTING ALL COMMANDS...\n")
+    execute_all(order, config)
+    print("\n💥 PIPELINE COMPLETE.\n")
 
 
 if __name__ == "__main__":
