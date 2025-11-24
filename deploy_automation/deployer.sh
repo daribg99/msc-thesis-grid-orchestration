@@ -58,14 +58,14 @@ fi
 
 # --- helper functions ---
 
-# Normalizza "cluster1" / "cluster-1" / " cluster1 " -> "cluster-1"
+# From "cluster1" / "cluster-1" / " cluster1 " -> "cluster-1"
 normalize_cluster_name() {
   local raw="$1"
-  raw="${raw//$'\r'/}"                                # rimuove CR
-  raw="$(echo -n "$raw" | sed -E 's/[[:space:]]//g')" # rimuove spazi/tab
+  raw="${raw//$'\r'/}"                                # remove CR
+  raw="$(echo -n "$raw" | sed -E 's/[[:space:]]//g')" # remove spaces/tabs
   local norm
   norm="$(echo "$raw" | sed -E 's/^cluster-?([0-9]+)$/cluster-\1/i')"
-  # Se non matcha il pattern atteso, restituisci comunque la stringa pulita
+  # If it doesn't match the expected pattern, return the cleaned string anyway
   if [[ -z "$norm" ]]; then
     echo "$raw"
   else
@@ -73,7 +73,7 @@ normalize_cluster_name() {
   fi
 }
 
-# Calcola l'offset delle porte esterne a partire dal numero del cluster:
+# port offset based on cluster name
 # cluster-1 -> offset 0, cluster-2 -> 100, cluster-3 -> 200, ...
 cluster_port_offset() {
   local name="$1"
@@ -88,7 +88,7 @@ cluster_port_offset() {
   echo 0
 }
 
-# Converte "cluster1"/"cluster-1" -> "k3d-cluster-1" (nome del context)
+# From "cluster-1" → "k3d-cluster-1"
 normalize_to_ctx() {
   local raw="$1"
   local cname

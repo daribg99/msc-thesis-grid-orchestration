@@ -2,6 +2,7 @@
 import json
 import sys
 import subprocess
+import time
 from collections import defaultdict, deque
 
 
@@ -46,9 +47,9 @@ def cluster_to_context(cluster):
     number = cluster.replace("cluster", "")
     return f"k3d-cluster-{number}"
 
-def build_acronym(cluster):
-    num = cluster.replace("cluster", "")
-    return f"C{num}LOW"
+def cluster_number(cluster):
+    return cluster.replace("cluster", "")
+
 
 
 # --------------------------------------------------------
@@ -178,7 +179,32 @@ def print_operation_plan(order, config):
 # --------------------------------------------------------
 #   EXECUTE EVERYTHING (MISSILE MODE C3)
 # --------------------------------------------------------
+def wait_for_pdc_ready(cluster, timeout=7200):
+    context = cluster_to_context(cluster)
+    start = time.time()
 
+    print(f"\n⏳ Waiting for PDC in {cluster} to become Running...")
+
+    while True:
+        cmd = (
+            f"kubectl --context {context} get pods -n lower "
+            f"-o jsonpath='{{.items[?(@.metadata.name contains \"openpdc\")].status.phase}}'"
+        )
+        try:
+            status = subprocess.check_output(cmd, shell=True).decode().strip()
+        except subprocess.CalledProcessError:
+            status = ""
+
+        if status == "Running":
+            print(f"✅ PDC in {cluster} is Running. Configuration can proceed...")
+            return
+
+        if time.time() - start > timeout:
+            print(f"\n❌ ERROR: PDC in {cluster} did NOT become Running within {timeout} seconds.")
+            sys.exit(1)
+
+        time.sleep(2)
+        
 def execute_all(order, config):
     for cluster in order:
         context = cluster_to_context(cluster)
@@ -192,6 +218,7 @@ def execute_all(order, config):
                   f"   Aborting MISSILE MODE to avoid half-applied configuration.\n")
             sys.exit(1)
         
+        wait_for_pdc_ready(cluster)
         db = cluster
         pod = get_pdc_pod(cluster)
 
@@ -221,7 +248,10 @@ def execute_all(order, config):
             server_ip = get_node_ip(child)
             port = calc_port(child)
             name = f"lower{child}"
-            acronym = build_acronym(cluster)
+            child_num = cluster_number(child)
+            parent_num = cluster_number(cluster)
+            acronym = f"CNC{child_num}C{parent_num}"
+
             
             cmd = (
                 f"./openpdc_cli.sh connectiontopdc "
@@ -241,7 +271,8 @@ def execute_all(order, config):
         # 3) OUTPUTSTREAM
         pmus = ",".join(config[cluster]["outputstream"])
         name = f"output{cluster}"
-        acronym = build_acronym(cluster)
+        num = cluster_number(cluster)
+        acronym = f"OUTC{num}"
 
         cmd = (
             f"./openpdc_cli.sh createoutputstream "
@@ -284,7 +315,7 @@ def main():
 
     print_operation_plan(order, config)
 
-    print("\n\n🚀 MISSILE MODE ENABLED — EXECUTING ALL COMMANDS...\n")
+    print("\n\n🚀 EXECUTING ALL COMMANDS...\n")
     execute_all(order, config)
     print("\n💥 PIPELINE COMPLETE.\n")
 
