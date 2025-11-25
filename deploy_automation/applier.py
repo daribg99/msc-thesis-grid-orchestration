@@ -67,13 +67,21 @@ def wait_for_pdc_ready(cluster, timeout=7200):
     print(f"\n⏳ Waiting for PDC in {cluster} to become Running. The operation may take several minutes...")
 
     while True:
-        cmd = (
-            f"kubectl --context {context} get pods -n lower "
-            f"-o jsonpath='{{.items[?(@.metadata.name contains \"openpdc\")].status.phase}}'"
-        )
         try:
-            status = subprocess.check_output(cmd, shell=True).decode().strip()
-        except subprocess.CalledProcessError:
+            pod = get_pdc_pod(cluster)
+        except RuntimeError:
+            pod = None
+
+        if pod:
+            cmd = (
+                f"kubectl --context {context} get pod {pod} -n lower "
+                f"-o jsonpath='{{.status.phase}}'"
+            )
+            try:
+                status = subprocess.check_output(cmd, shell=True).decode().strip()
+            except subprocess.CalledProcessError:
+                status = ""
+        else:
             status = ""
 
         if status == "Running":
@@ -85,6 +93,7 @@ def wait_for_pdc_ready(cluster, timeout=7200):
             sys.exit(1)
 
         time.sleep(2)
+
 
 # --------------------------------------------------------
 #   Construction of PDC configuration from paths
