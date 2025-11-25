@@ -145,6 +145,74 @@ wait_for_percona_ready() {
   return 1
 }
 
+wait_for_all_workloads_ready() {
+  local timeout_sec=7200     # 2 hours
+  local interval_sec=30
+  local elapsed=0
+
+  local total="${#WORKLOAD_NAME[@]}"
+
+  echo "⏱️  Waiting for ALL PMU + PDC workloads to become READY..."
+
+  local -a READY_FLAGS
+  for ((i=0; i<total; i++)); do READY_FLAGS[i]=0; done
+
+  while (( elapsed < timeout_sec )); do
+    local ready_count=0
+
+    for ((i=0; i<total; i++)); do
+      if (( READY_FLAGS[i] == 1 )); then
+        ((ready_count++))
+        continue
+      fi
+
+      local ctx="${WORKLOAD_CTX[i]}"
+      local ns="${WORKLOAD_NS[i]}"
+      local app="${WORKLOAD_NAME[i]}"   # es: "openpdc" o "pmu-1"
+
+      deploy_name="$app"
+
+      if [[ -z "$deploy_name" ]]; then
+        echo "   … no deployment with app=$app in $ctx yet"
+        continue
+      fi
+
+      # CHECK READY/EXPECTED
+      ready="$(kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" \
+        get deploy "$deploy_name" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)"
+
+      desired="$(kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" \
+        get deploy "$deploy_name" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo 1)"
+
+      if [[ -z "$ready" ]]; then ready=0; fi
+
+      if (( ready == desired )); then
+        echo "   ✅ $app @ $ctx READY ($ready/$desired)"
+        READY_FLAGS[i]=1
+        ((ready_count++))
+      else
+        echo "   … $app @ $ctx NOT ready ($ready/$desired)"
+      fi
+    done
+
+    echo
+
+    if (( ready_count == total )); then
+      echo "🎉 All workloads READY!"
+      return 0
+    fi
+
+    echo "⏳ Retrying in ${interval_sec}s..."
+    sleep "$interval_sec"
+    elapsed=$((elapsed + interval_sec))
+  done
+
+  echo "⚠️  Timeout: not all workloads became ready in ${timeout_sec}s" >&2
+  return 1
+}
+
+
+
 # --- Extraction of clusters (PDC) from JSON ---
 echo "🔎 Extracting PDC (clusters) from JSON..."
 readarray -t ORDERED_CLUSTERS < <(
@@ -251,14 +319,8 @@ kubectl config view --merge --flatten > "$MERGED"
 echo "✅ Merged kubeconfig created successfully into $MERGED"
 echo
 
-NAMESPACE="lower"
-RAW_URL="https://raw.githubusercontent.com/daribg99/TESI/refs/heads/main/deploy/openpdc.yaml"
 
-if ! curl -fsI "$RAW_URL" >/dev/null; then
-  echo "❌ Manifest unreachable (404?): $RAW_URL" >&2
-  echo "👉 Open the link in your browser and use the 'Raw' button to copy the correct URL." >&2
-  exit 1
-fi
+# --- Deploy Percona XtraDB on cluster-db ---
 
 echo
 echo "🏗️  Setup Percona XtraDB sul cluster DB ('$DB_CLUSTER')..."
@@ -322,10 +384,24 @@ if [[ -z "$DB_IP" ]]; then
 fi
 echo "   ✅ DB_IP: $DB_IP"
 
+
+# Global array for wait_for_all_workloads_ready function
+WORKLOAD_CTX=()
+WORKLOAD_NS=()
+WORKLOAD_NAME=()
+
+# --- Deploy openPDC on each cluster (except DB) ---
+NAMESPACE="lower"
+RAW_PDC_URL="https://raw.githubusercontent.com/daribg99/TESI/refs/heads/main/deploy/openpdc.yaml"
+if ! curl -fsI "$RAW_PDC_URL" >/dev/null; then
+  echo "❌ Manifest unreachable (404?): $RAW_PDC_URL" >&2
+  echo "👉 Open the link in your browser and use the 'Raw' button to copy the correct URL." >&2
+  exit 1
+fi
 # Download the RAW manifest only once into a temporary file
 echo "⬇️  Downloading RAW openPDC manifest only once..."
 TMP_RAW="$(mktemp)"
-curl -fsSL "$RAW_URL" -o "$TMP_RAW"
+curl -fsSL "$RAW_PDC_URL" -o "$TMP_RAW"
 
 echo
 echo "🚀 Deploy PDC on each cluster (except '$DB_CLUSTER')..."
@@ -420,12 +496,16 @@ awk -v db="$db_name_no_dash" -v ip="$DB_IP" -v svc="$svc_name" '
   { print }
 ' "$TMP_RAW" > "$TMP_PER_CLUSTER"
 
-  # 3) Applico sul cluster target
+  # 3) Apply patched manifest to the target cluster
   echo "   📥 kubectl apply -n $NAMESPACE -f <patched>"
   if kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" apply -f "$TMP_PER_CLUSTER"; then
     echo "   ✅ Apply OK on '$ctx'"
     echo "   🔎 Pods:"
     kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" get pods
+    WORKLOAD_CTX+=("$ctx")
+    WORKLOAD_NS+=("$NAMESPACE")
+    WORKLOAD_NAME+=("openpdc")  
+
   else
     echo "   ❌ Apply FAILED on '$ctx' — continuing with the next one" >&2
   fi
@@ -433,5 +513,65 @@ awk -v db="$db_name_no_dash" -v ip="$DB_IP" -v svc="$svc_name" '
   echo
 done
 
+
+# --- Deploy PMU ---
+echo
+echo "🚀 PMU Deployment..."
+
+PMU_DIR="../deploy"
+
+if [ ! -d "$PMU_DIR" ]; then
+  echo "❌ Directory for PMU not found: $PMU_DIR" >&2
+  exit 1
+fi
+
+# Extract pairs (PMU-X → clusterY)
+readarray -t PMU_MAP < <(
+  jq -r '.paths[] | "\(.[0]) \(.[1])"' "$JSON"
+)
+for entry in "${PMU_MAP[@]}"; do
+  pmu_name="$(echo "$entry" | awk '{print $1}')"     # es: PMU-1
+  raw_cluster="$(echo "$entry" | awk '{print $2}')"  # es: cluster1
+
+  cname="$(normalize_cluster_name "$raw_cluster")"    # es: cluster-1
+  ctx="$(normalize_to_ctx "$cname")"                 # es: k3d-cluster-1
+
+  yaml_file="$PMU_DIR/$(echo "$pmu_name" | tr '[:upper:]' '[:lower:]').yaml"
+  # => pmu-1.yaml
+
+  echo "➡️  Deploy PMU '$pmu_name' in cluster '$cname'"
+
+  # Check context
+  if ! kubectl --kubeconfig "$MERGED" config get-contexts -o name | grep -qx "$ctx"; then
+    echo "   ⚠️  Context '$ctx' NOT found in merged kubeconfig, skip."
+    echo
+    continue
+  fi
+
+  # Check PMU YAML file
+  if [ ! -f "$yaml_file" ]; then
+    echo "   ❌ PMU file missing: $yaml_file"
+    echo
+    continue
+  fi
+
+  echo "   📥 Apply $yaml_file in cluster '$ctx'..."
+  if kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" apply -f "$yaml_file"; then
+    echo "   ✅ PMU '$pmu_name' deployed successfully."
+    # Register PMU workload for final wait
+    pmu_deploy_name="$(echo "$pmu_name" | tr '[:upper:]' '[:lower:]')"  # pmu-1
+    WORKLOAD_CTX+=("$ctx")
+    WORKLOAD_NS+=("lower")
+    WORKLOAD_NAME+=("$pmu_deploy_name")
+
+  else
+    echo "   ❌ Failed to deploy '$pmu_name' in '$ctx'"
+  fi
+
+  echo
+done
+
+echo
+wait_for_all_workloads_ready || echo "⚠️  Some workloads did not become ready in time."
 echo "🎯 Done. You can see pod and svc by running:"
 echo "kubectl --kubeconfig \"$MERGED\" --context <context> -n <namespace> get pods,svc"

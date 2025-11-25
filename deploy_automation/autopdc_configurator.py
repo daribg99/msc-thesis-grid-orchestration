@@ -14,21 +14,19 @@ def run_command(cmd):
     )
 
     for line in process.stdout:
-        print(line, end="")  # live stamp
+        print(line, end="")  
 
     process.wait()
     return process.returncode
 
 
 def main():
-    # Check arguments
     if len(sys.argv) != 2:
         print(f"Uso: {sys.argv[0]} <config.json>")
         sys.exit(1)
 
     json_path = sys.argv[1]
 
-    # Check file existence
     if not os.path.isfile(json_path):
         print(f"❌ JSON file not found: {json_path}")
         sys.exit(1)
@@ -53,6 +51,5 @@ def main():
 
 
 if __name__ == "__main__":
-    # Clean CTRL-C handling
-    signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(1))
+    signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(1))     # Clean CTRL-C handling
     main()

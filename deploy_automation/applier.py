@@ -12,7 +12,7 @@ from collections import defaultdict, deque
 
 def run_cmd(cmd):
     print(f"\n>>> RUNNING:\n{cmd}\n")
-    #subprocess.run(cmd, shell=True, check=True)
+    subprocess.run(cmd, shell=True, check=True)
 
 def get_openpdc_port(cluster):
     """
