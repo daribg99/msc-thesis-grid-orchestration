@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_NAME="$(basename "$0")"
+IS_FIRST_DEPLOY=0
 
 print_help() {
   cat <<EOF
@@ -35,6 +36,9 @@ JSON="$1"
 OUT_DIR="${2:-kubeconfigs}"
 MERGED="${OUT_DIR}/merged.yaml"
 mkdir -p "$OUT_DIR"
+if [ ! -f "$MERGED" ]; then
+    IS_FIRST_DEPLOY=1
+fi
 
 if [ ! -f "$JSON" ]; then
   echo "❌ JSON file not found: $JSON" >&2
@@ -95,6 +99,43 @@ normalize_to_ctx() {
   cname="$(normalize_cluster_name "$raw")"
   echo "k3d-${cname}"
 }
+
+# If kubeconfigs/merged.yaml exist, clear db volume
+clear_volume() {
+  local ns="db"
+  local ctx="k3d-cluster-db"
+
+  if [ "$IS_FIRST_DEPLOY" -eq 1  ]; then
+    echo "ℹ️ merged.yaml does not exist yet, skipping DB volume cleanup."
+    return 0
+  fi
+
+  echo "🧹 Configuration found! Clearing DB volume in '$ctx'..."
+
+  local pxc
+  pxc="$(kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" get pxc -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+
+  if [[ -n "$pxc" ]]; then
+    echo "   ➤ Deleting PXC: $pxc"
+    kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" delete pxc "$pxc" --ignore-not-found
+  else
+    echo "   ⚠️ No PerconaXtraDBCluster found."
+  fi
+
+  local pvc
+  pvc="$(kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" get pvc -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+
+  if [[ -n "$pvc" ]]; then
+    echo "   ➤ Deleting PVC: $pvc"
+    kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" delete pvc "$pvc" --ignore-not-found
+  else
+    echo "   ⚠️ No PVC to delete."
+  fi
+
+  echo "✅ Volume and DB cluster cleaned."
+  echo
+}
+
 
 wait_for_percona_ready() {
   local ctx="$1"   # es: k3d-cluster-db
@@ -303,7 +344,10 @@ if [ "${#CLUSTERS[@]}" -eq 0 ]; then
   exit 1
 fi
 
+
+clear_volume
 echo "📦 Exporting and merging kubeconfigs..."
+
 KUBEFILES=()
 for c in "${CLUSTERS[@]}"; do
   f="$OUT_DIR/${c}.yaml"
@@ -353,31 +397,25 @@ if ! kubectl --kubeconfig "$MERGED" --context "$DB_CTX" get ns db >/dev/null 2>&
   kubectl --kubeconfig "$MERGED" --context "$DB_CTX" create ns db
 fi
 
-if [ "$CLUSTER_DB_EXISTS" -eq 0 ]; then
-  echo "   📥 Applying Percona manifest in the cluster-db..."
-  # CRD (cluster-scoped, without -n)
-  kubectl --kubeconfig "$MERGED" --context "$DB_CTX" apply -f "$PERCONA_DIR/crd.yaml"
+echo "   📥 Applying Percona manifest in the cluster-db..."
+kubectl --kubeconfig "$MERGED" --context "$DB_CTX" apply -f "$PERCONA_DIR/crd.yaml"
+kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/rbac.yaml"
+kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/operator.yaml"
+kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/secrets.yaml"
+kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/cr.yaml"
+kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/np-svc.yaml"
 
-  # Everything else inside ns db
-  kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/rbac.yaml"
-  kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/operator.yaml"
-  kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/secrets.yaml"
-  kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/cr.yaml"
-  kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db apply -f "$PERCONA_DIR/np-svc.yaml"
+echo "   ✅ Percona XtraDB manifest applied (operator + cluster + secrets)."
+echo
 
-  echo "   ✅ Percona XtraDB manifest applied (operator + cluster + secrets)."
-  echo
-
-  # Wait for PerconaXtraDBCluster to become READY
-  wait_for_percona_ready "$DB_CTX" || echo "   ⚠️  Continuing anyway with the deploy of PDC."
-  echo
-else 
-  echo "   ✅ Percona XtraDB already set up in cluster-db, skipping manifest application."
-fi 
+# Wait for PerconaXtraDBCluster to become READY
+wait_for_percona_ready "$DB_CTX" || echo "   ⚠️  Continuing anyway with the deploy of PDC."
+echo
 
 # --- Preparing DB data: IP and secret ---
 echo "🔗 Retrieving DB IP (container k3d-cluster-db-server-0 on mc-net)..."
-DB_IP="$(docker inspect -f '{{ (index .NetworkSettings.Networks "mc-net").IPAddress }}' k3d-cluster-db-server-0 2>/dev/null || true)"
+DB_IP="$(docker inspect k3d-cluster-db-server-0 2>/dev/null \
+  | jq -r '.[0].NetworkSettings.Networks["mc-net"].IPAddress')"
 if [[ -z "$DB_IP" ]]; then
   echo "❌ Unable to determine DB IP on mc-net. Verify that the container 'k3d-cluster-db-server-0' exists and is on the 'mc-net' network." >&2
   exit 1
@@ -407,111 +445,131 @@ echo
 echo "🚀 Deploy PDC on each cluster (except '$DB_CLUSTER')..."
 echo "-----------------------------------------------------------"
 
-for c in "${ORDERED_CLUSTERS[@]}"; do
-  cname="$(normalize_cluster_name "$c")"          # es: cluster-1
-  if [[ "$cname" == "$DB_CLUSTER" ]]; then
-    echo "➡️  Skipping DB cluster '$cname'"
-    continue
-  fi
+if [ "$IS_FIRST_DEPLOY" -eq 1 ]; then
+  for c in "${ORDERED_CLUSTERS[@]}"; do
+    cname="$(normalize_cluster_name "$c")"          # es: cluster-1
+    if [[ "$cname" == "$DB_CLUSTER" ]]; then
+      echo "➡️  Skipping DB cluster '$cname'"
+      continue
+    fi
 
-  ctx="$(normalize_to_ctx "$cname")"              # es: k3d-cluster-1
-  echo "➡️  Cluster JSON: '$c'  → context: '$ctx'"
+    ctx="$(normalize_to_ctx "$cname")"              # es: k3d-cluster-1
+    echo "➡️  Cluster JSON: '$c'  → context: '$ctx'"
 
-  if ! kubectl --kubeconfig "$MERGED" config get-contexts -o name | grep -qx "$ctx"; then
-    echo "   ⚠️  Context '$ctx' NOT present in the merged kubeconfig. Skip."
+    if ! kubectl --kubeconfig "$MERGED" config get-contexts -o name | grep -qx "$ctx"; then
+      echo "   ⚠️  Context '$ctx' NOT present in the merged kubeconfig. Skip."
+      echo
+      continue
+    fi
+
+    # Namespace on the target PDC cluster
+    if ! kubectl --kubeconfig "$MERGED" --context "$ctx" get ns "$NAMESPACE" >/dev/null 2>&1; then
+      echo "   📦 Creating namespace '$NAMESPACE'..."
+      kubectl --kubeconfig "$MERGED" --context "$ctx" create ns "$NAMESPACE"
+    fi
+
+    # 1) Copy secret from DB cluster → target cluster (lower namespace)
+  echo "   🔐 Sync secret 'cluster-db-secrets' from DB → $ctx/$NAMESPACE ..."
+
+  kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db get secret cluster-db-secrets -o yaml \
+    | sed '
+        /resourceVersion:/d
+        /uid:/d
+        /creationTimestamp:/d
+        /selfLink:/d
+        /managedFields:/,/^[^ ]/d
+        /^  namespace:/d
+      ' \
+    | sed "s/^metadata:\n  name: .*/metadata:\n  name: cluster-db-secrets/" \
+    | sed "s/^metadata:$/metadata:\n  namespace: $NAMESPACE/" \
+    | kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" apply -f - >/dev/null
+
+
+    # 2) Preparing patched YAML file for this cluster
+  #    - DB_NAME: cluster1/cluster2/...  (removing the '-')
+  #    - DB_URL:  IP of the DB (from docker inspect)
+  #    - Service name: openpdc-low-<cluster> (per distinguerlo negli script)
+
+  db_name_no_dash="$(echo "$cname" | sed 's/-//')"
+  svc_name="openpdc-$db_name_no_dash"
+
+  TMP_PER_CLUSTER="$(mktemp)"
+
+  echo "   🛠️  Patch con awk (DB_NAME=$db_name_no_dash, DB_URL=$DB_IP, SVC_NAME=$svc_name)..."
+  awk -v db="$db_name_no_dash" -v ip="$DB_IP" -v svc="$svc_name" '
+    BEGIN {
+      isService = 0
+    }
+    /^kind:[[:space:]]*Service/ {
+      isService = 1
+      print
+      next
+    }
+    /^kind:/ {
+      isService = 0
+      print
+      next
+    }
+    isService && $1 == "name:" && $2 == "openpdc" {
+      sub(/openpdc$/, svc)
+      print
+      next
+    }
+    /name:[[:space:]]*DB_NAME/ {
+      print
+      if (getline line) {
+        sub(/value:.*/, "value: " db, line)
+        print line
+      }
+      next
+    }
+    /name:[[:space:]]*DB_URL/ {
+      print
+      if (getline line) {
+        sub(/value:.*/, "value: \"" ip "\"", line)
+        print line
+      }
+      next
+    }
+
+    { print }
+  ' "$TMP_RAW" > "$TMP_PER_CLUSTER"
+
+    # 3) Apply patched manifest to the target cluster
+    echo "   📥 kubectl apply -n $NAMESPACE -f <patched>"
+    if kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" apply -f "$TMP_PER_CLUSTER"; then
+      echo "   ✅ Apply OK on '$ctx'"
+      echo "   🔎 Pods:"
+      kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" get pods
+      WORKLOAD_CTX+=("$ctx")
+      WORKLOAD_NS+=("$NAMESPACE")
+      WORKLOAD_NAME+=("openpdc")  
+
+    else
+      echo "   ❌ Apply FAILED on '$ctx' — continuing with the next one" >&2
+    fi
+
     echo
-    continue
-  fi
+  done
+else 
+  echo "🔄 Redeploy detected: restarting all openPDC pods on every cluster..."
 
-  # Namespace on the target PDC cluster
-  if ! kubectl --kubeconfig "$MERGED" --context "$ctx" get ns "$NAMESPACE" >/dev/null 2>&1; then
-    echo "   📦 Creating namespace '$NAMESPACE'..."
-    kubectl --kubeconfig "$MERGED" --context "$ctx" create ns "$NAMESPACE"
-  fi
+  for c in "${ORDERED_CLUSTERS[@]}"; do
+    cname="$(normalize_cluster_name "$c")"
+    # Skip DB cluster (openPDC not deployed there)
+    if [[ "$cname" == "$DB_CLUSTER" ]]; then
+      continue
+    fi
 
-  # 1) Copy secret from DB cluster → target cluster (lower namespace)
-echo "   🔐 Sync secret 'cluster-db-secrets' from DB → $ctx/$NAMESPACE ..."
+    ctx="$(normalize_to_ctx "$cname")"
 
-kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db get secret cluster-db-secrets -o yaml \
-  | sed '
-      /resourceVersion:/d
-      /uid:/d
-      /creationTimestamp:/d
-      /selfLink:/d
-      /managedFields:/,/^[^ ]/d
-      /^  namespace:/d
-    ' \
-  | sed "s/^metadata:\n  name: .*/metadata:\n  name: cluster-db-secrets/" \
-  | sed "s/^metadata:$/metadata:\n  namespace: $NAMESPACE/" \
-  | kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" apply -f - >/dev/null
-
-
-  # 2) Preparing patched YAML file for this cluster
-#    - DB_NAME: cluster1/cluster2/...  (removing the '-')
-#    - DB_URL:  IP of the DB (from docker inspect)
-#    - Service name: openpdc-low-<cluster> (per distinguerlo negli script)
-
-db_name_no_dash="$(echo "$cname" | sed 's/-//')"
-svc_name="openpdc-$db_name_no_dash"
-
-TMP_PER_CLUSTER="$(mktemp)"
-
-echo "   🛠️  Patch con awk (DB_NAME=$db_name_no_dash, DB_URL=$DB_IP, SVC_NAME=$svc_name)..."
-awk -v db="$db_name_no_dash" -v ip="$DB_IP" -v svc="$svc_name" '
-  BEGIN {
-    isService = 0
-  }
-  /^kind:[[:space:]]*Service/ {
-    isService = 1
-    print
-    next
-  }
-  /^kind:/ {
-    isService = 0
-    print
-    next
-  }
-  isService && $1 == "name:" && $2 == "openpdc" {
-    sub(/openpdc$/, svc)
-    print
-    next
-  }
-  /name:[[:space:]]*DB_NAME/ {
-    print
-    if (getline line) {
-      sub(/value:.*/, "value: " db, line)
-      print line
-    }
-    next
-  }
-  /name:[[:space:]]*DB_URL/ {
-    print
-    if (getline line) {
-      sub(/value:.*/, "value: \"" ip "\"", line)
-      print line
-    }
-    next
-  }
-
-  { print }
-' "$TMP_RAW" > "$TMP_PER_CLUSTER"
-
-  # 3) Apply patched manifest to the target cluster
-  echo "   📥 kubectl apply -n $NAMESPACE -f <patched>"
-  if kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" apply -f "$TMP_PER_CLUSTER"; then
-    echo "   ✅ Apply OK on '$ctx'"
-    echo "   🔎 Pods:"
-    kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" get pods
+    echo "   ➤ Deleting openPDC pods in cluster $cname"
+    kubectl --kubeconfig "$MERGED" --context "$ctx" -n lower delete pod -l app=openpdc
     WORKLOAD_CTX+=("$ctx")
     WORKLOAD_NS+=("$NAMESPACE")
-    WORKLOAD_NAME+=("openpdc")  
-
-  else
-    echo "   ❌ Apply FAILED on '$ctx' — continuing with the next one" >&2
-  fi
-
-  echo
-done
+    WORKLOAD_NAME+=("openpdc")   
+  done
+fi  
 
 
 # --- Deploy PMU ---
