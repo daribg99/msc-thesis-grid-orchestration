@@ -34,8 +34,14 @@ def get_pdc_pod(cluster):
 
 def get_node_ip(cluster):
     context = cluster_to_context(cluster)
-    cmd = f"kubectl --context {context} get nodes -o wide | awk 'NR==2 {{print $6}}'"
+    node_name = f"{context}-server-0"
+    cmd = (
+        f"kubectl --context {context} get node {node_name} "
+        f"-o jsonpath='{{.status.addresses[?(@.type==\"InternalIP\")].address}}'"
+    )
     return subprocess.check_output(cmd, shell=True).decode().strip()
+
+
 
 
 def calc_port(child_cluster):
@@ -228,6 +234,17 @@ def execute_all(order, config):
         print(f" CONFIGURING {cluster}")
         print(f"==============================\n")
 
+        # 0) HISTORIAN CREATION
+        cmd = (
+            f"./openpdc_cli.sh createhistorian "
+            f"--db-context k3d-cluster-db "
+            f"--openpdc-context {context} "
+            f"--db-ns db --pdc-ns lower "
+            f"--db {cluster} "
+            f"--pod {pod}"
+        )
+        run_cmd(cmd)
+        
         # 1) ADDPMU
         for pmu in config[cluster]["pmu_direct"]:
             pmu_name = pmu.replace("PMU", "Pmu")

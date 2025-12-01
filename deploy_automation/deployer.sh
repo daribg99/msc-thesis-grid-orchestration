@@ -106,7 +106,7 @@ clear_volume() {
   local ctx="k3d-cluster-db"
 
   if [ "$IS_FIRST_DEPLOY" -eq 1  ]; then
-    echo "ℹ️ merged.yaml does not exist yet, skipping DB volume cleanup."
+    echo "ℹ️  No configuration found. Proceeding with new one..."
     return 0
   fi
 

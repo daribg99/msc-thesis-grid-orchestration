@@ -502,7 +502,7 @@ INSERT INTO OutputStream (
   DigitalMaskValue, PerformTimeReasonabilityCheck, UpdatedBy, UpdatedOn, CreatedBy, CreatedOn
 ) VALUES (
   @NodeID, '${ACRONYM}', '${NAME}', 0, NULL, 0,
-  'port=${PORT}', NULL,
+  'port=${PORT};', NULL,
   0, 1, ${NOMFREQ}, ${FPS},
   ${LAG}, ${LEAD}, 1, 0, 1, 1,
   0, 330000, 1, 'LastReceived', 'FloatingPoint', 'Polar',
