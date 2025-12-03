@@ -296,9 +296,9 @@ for raw in "${ORDERED_CLUSTERS[@]}"; do
   echo "   ➕ Creating k3d cluster '$cname' (ports: $p1:30085, $p2:30065, $p3:30099)..."
   k3d cluster create "$cname" \
     --image rancher/k3s:v1.29.4-k3s1 \
-    -p "${p1}:30085@server:0" \
-    -p "${p2}:30065@server:0" \
-    -p "${p3}:30099@server:0" \
+    -p "${p1}:${p1}@server:0" \
+    -p "${p2}:${p2}@server:0" \
+    -p "${p3}:${p3}@server:0" \
     --agents 1 \
     --k3s-arg "--flannel-iface=eth0"@server:0 \
     --network mc-net
@@ -494,46 +494,90 @@ if [ "$IS_FIRST_DEPLOY" -eq 1 ]; then
   svc_name="openpdc-$db_name_no_dash"
 
   TMP_PER_CLUSTER="$(mktemp)"
+  port_offset="$(cluster_port_offset "$cname")"
+  echo " 🛠️ Patch con awk (DB_NAME=$db_name_no_dash, DB_URL=$DB_IP, SVC_NAME=$svc_name, OFFSET=$port_offset)..."
 
-  echo "   🛠️  Patch con awk (DB_NAME=$db_name_no_dash, DB_URL=$DB_IP, SVC_NAME=$svc_name)..."
-  awk -v db="$db_name_no_dash" -v ip="$DB_IP" -v svc="$svc_name" '
-    BEGIN {
+  awk -v db="$db_name_no_dash" \
+    -v ip="$DB_IP" \
+    -v svc="$svc_name" \
+    -v offset="$port_offset" '
+  BEGIN {
       isService = 0
-    }
-    /^kind:[[:space:]]*Service/ {
+
+      # Calcolo offset porte
+      console_np = 30085 + offset
+      output_np  = 30099 + offset
+      datapub_np = 30065 + offset
+  }
+
+  # Entrata nella sezione Service
+  /^kind:[[:space:]]*Service/ {
       isService = 1
       print
       next
-    }
-    /^kind:/ {
+  }
+
+  # Nuovo "kind:" → uscita dal Service
+  /^kind:/ {
       isService = 0
       print
       next
-    }
-    isService && $1 == "name:" && $2 == "openpdc" {
+  }
+
+  # Patch nome Service openpdc
+  isService && $1 == "name:" && $2 == "openpdc" {
       sub(/openpdc$/, svc)
       print
       next
-    }
-    /name:[[:space:]]*DB_NAME/ {
-      print
-      if (getline line) {
-        sub(/value:.*/, "value: " db, line)
-        print line
-      }
-      next
-    }
-    /name:[[:space:]]*DB_URL/ {
-      print
-      if (getline line) {
-        sub(/value:.*/, "value: \"" ip "\"", line)
-        print line
-      }
-      next
-    }
+  }
 
-    { print }
+  # Patch DB_NAME
+  /name:[[:space:]]*DB_NAME/ {
+      print
+      if (getline line) {
+          sub(/value:.*/, "value: " db, line)
+          print line
+      }
+      next
+  }
+
+  # Patch DB_URL
+  /name:[[:space:]]*DB_URL/ {
+      print
+      if (getline line) {
+          sub(/value:.*/, "value: \"" ip "\"", line)
+          print line
+      }
+      next
+  }
+
+  # --- PATCH NODEPORT DINAMICHE ---
+
+  # console (8500 → 30085)
+  /nodePort:[[:space:]]*30085/ {
+      printf("      nodePort: %d\n", console_np)
+      next
+  }
+
+  # datapublisher (6165 → 30065)
+  /nodePort:[[:space:]]*30065/ {
+      printf("      nodePort: %d\n", datapub_np)
+      next
+  }
+
+  # outputstream (4712 → 30099)
+  /nodePort:[[:space:]]*30099/ {
+      printf("      nodePort: %d\n", output_np)
+      next
+  }
+
+  # Default: stampa la riga
+  {
+      print
+  }
   ' "$TMP_RAW" > "$TMP_PER_CLUSTER"
+
+
 
     # 3) Apply patched manifest to the target cluster
     echo "   📥 kubectl apply -n $NAMESPACE -f <patched>"
