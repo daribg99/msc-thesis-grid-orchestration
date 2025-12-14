@@ -540,14 +540,9 @@ SET @OSDevID := LAST_INSERT_ID();
 INSERT INTO OutputStreamDevicePhasor
   (NodeID, OutputStreamDeviceID, Label, Type, Phase, ScalingValue, LoadOrder, UpdatedBy, UpdatedOn, CreatedBy, CreatedOn)
 VALUES
-  (@NodeID, @OSDevID, 'A', 'V', '+', 0, 1, '${USERTAG}', NOW(6), '${USERTAG}', NOW(6)),
-  (@NodeID, @OSDevID, 'B', 'V', '+', 0, 2, '${USERTAG}', NOW(6), '${USERTAG}', NOW(6)),
-  (@NodeID, @OSDevID, 'C', 'V', '+', 0, 3, '${USERTAG}', NOW(6), '${USERTAG}', NOW(6));
-
-INSERT INTO OutputStreamDeviceAnalog
-  (NodeID, OutputStreamDeviceID, Label, Type, ScalingValue, LoadOrder, UpdatedBy, UpdatedOn, CreatedBy, CreatedOn)
-VALUES
-  (@NodeID, @OSDevID, 'D', 0, 0, 1, '${USERTAG}', NOW(6), '${USERTAG}', NOW(6));
+  (@NodeID, @OSDevID, 'A +SV', 'V', '+', 0, 1, '${USERTAG}', NOW(6), '${USERTAG}', NOW(6)),
+  (@NodeID, @OSDevID, 'B +SV', 'V', '+', 0, 2, '${USERTAG}', NOW(6), '${USERTAG}', NOW(6)),
+  (@NodeID, @OSDevID, 'C +SV', 'V', '+', 0, 3, '${USERTAG}', NOW(6), '${USERTAG}', NOW(6));
 
 INSERT INTO OutputStreamMeasurement
   (NodeID, AdapterID, HistorianID, PointID, SignalReference, UpdatedBy, UpdatedOn, CreatedBy, CreatedOn)
@@ -555,7 +550,7 @@ SELECT
   @NodeID, @AdapterID, 1, m.PointID, m.SignalReference, '${USERTAG}', NOW(6), '${USERTAG}', NOW(6)
 FROM Measurement m
 JOIN Device d ON d.ID = m.DeviceID
-WHERE d.Acronym='${pmu}' AND m.SignalReference NOT LIKE '%-QF';
+WHERE d.Acronym='${pmu}' AND m.SignalReference NOT LIKE '%-QF' AND m.SignalReference NOT LIKE '%-AV1';
 
 EOF
 )
@@ -568,7 +563,7 @@ done
     #echo "---------- BEGIN SQL ----------"
     #printf "%s\n" "$SQL"
     #echo "----------- END SQL -----------"
-  #printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
+    #printf "%s" "$SQL" | kubectl --context "$DB_CONTEXT" exec -i "$POD" -c pxc -n "$DB_NS" -- \
     #mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent
 
 run_mysql "$DB_CONTEXT" "$DB_NS" "$POD" "$SVC" "$ROOTPWD" "$DB_NAME" "$SQL" "$PDC_CONTEXT" "$PDC_NS" "$OPENPDC_POD"
@@ -840,6 +835,7 @@ for __pmu in "${__PMUS_ARR[@]}"; do
 -- PMU: ${__name}
 -- ========================================
 SET @ChildUniqueID := UUID();
+SET @AccessID := CAST(SUBSTRING_INDEX('${__acronym}', '-', -1) AS UNSIGNED);
 
 INSERT INTO Device (
   NodeID, ParentID, UniqueID, Acronym, Name, IsConcentrator,
@@ -852,7 +848,7 @@ INSERT INTO Device (
   UpdatedBy, UpdatedOn, CreatedBy, CreatedOn
 ) VALUES (
   @NodeID, @ClusterID, @ChildUniqueID, '${__acronym}', '${__name}', 0,
-  @NULL, 2, ${__idx}, @NULL, 1,
+  @NULL, 2, @AccessID, @NULL, 1,
   -98.6, 37.5, @NULL,
   '',
   @NULL, 30, 0, 5,
