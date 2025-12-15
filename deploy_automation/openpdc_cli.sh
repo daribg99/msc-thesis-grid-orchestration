@@ -544,16 +544,25 @@ VALUES
   (@NodeID, @OSDevID, 'B +SV', 'V', '+', 0, 2, '${USERTAG}', NOW(6), '${USERTAG}', NOW(6)),
   (@NodeID, @OSDevID, 'C +SV', 'V', '+', 0, 3, '${USERTAG}', NOW(6), '${USERTAG}', NOW(6));
 
+-- OutputStreamMeasurement: replica HistorianID reale e NON esclude AV1
 INSERT INTO OutputStreamMeasurement
   (NodeID, AdapterID, HistorianID, PointID, SignalReference, UpdatedBy, UpdatedOn, CreatedBy, CreatedOn)
 SELECT
-  @NodeID, @AdapterID, 1, m.PointID, m.SignalReference, '${USERTAG}', NOW(6), '${USERTAG}', NOW(6)
+  @NodeID,
+  @AdapterID,
+  m.HistorianID,
+  m.PointID,
+  m.SignalReference,
+  '${USERTAG}', NOW(6), '${USERTAG}', NOW(6)
 FROM Measurement m
 JOIN Device d ON d.ID = m.DeviceID
-WHERE d.Acronym='${pmu}' AND m.SignalReference NOT LIKE '%-QF' AND m.SignalReference NOT LIKE '%-AV1';
+WHERE d.Acronym='${pmu}'
+  AND m.HistorianID IS NOT NULL
+  AND m.SignalReference NOT LIKE '%-QF';
 
 EOF
 )
+
 
 SQL+="$BLOCK"
 
