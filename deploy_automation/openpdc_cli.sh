@@ -306,7 +306,7 @@ INSERT INTO Device (
   ConnectOndemand, UpdatedBy, UpdatedOn, CreatedBy, CreatedOn
 ) VALUES (
   @NodeID, NULL, @UniqueID,
-  '${ACRONYM}', '${NAME}', 0, NULL, 1,
+  '${ACRONYM}', '${NAME}', 0, NULL, 2,
   @AccessID, NULL, 1, -98.6, 37.5, NULL,
   'port=${PORT}; maxSendQueueSize=-1; server=${SERVER}; islistener=false; transportprotocol=tcp; interface=0.0.0.0',
   '', ${FPS}, 0, 5,
@@ -834,9 +834,13 @@ __idx=0
 
 for __pmu in "${__PMUS_ARR[@]}"; do
   __idx=$((__idx + 1))
-  __label="$(printf '%s' "$__pmu" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-  __acronym="$__label"
-  __name="$__label"
+  __label="$(printf '%s' "$__pmu" \
+    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
+  __acronym="$(printf '%s' "$__label" | tr '[:lower:]' '[:upper:]')"
+
+  __name="$(printf '%s' "$__label" | tr '[:upper:]' '[:lower:]')"
+
 
   __SQL_BLOCK=$(cat <<EOSQL
 
@@ -857,7 +861,7 @@ INSERT INTO Device (
   UpdatedBy, UpdatedOn, CreatedBy, CreatedOn
 ) VALUES (
   @NodeID, @ClusterID, @ChildUniqueID, '${__acronym}', '${__name}', 0,
-  @NULL, 2, @AccessID, @NULL, 1,
+  @NULL, 2, '1', @NULL, 1,
   -98.6, 37.5, @NULL,
   '',
   @NULL, 30, 0, 5,
@@ -872,16 +876,7 @@ SET @DeviceID := (SELECT ID FROM Device WHERE UniqueID=@ChildUniqueID);
 -- Analog Measurements
 -- =====================
 
-INSERT INTO Measurement (
-  HistorianID, DeviceID, PointTag, AlternateTag, SignalTypeID,
-  PhasorSourceIndex, SignalReference, Adder, Multiplier, Subscribed,
-  Internal, Description, Enabled, UpdatedBy, UpdatedOn, CreatedBy, CreatedOn
-) VALUES (
-  2, @DeviceID, '_${__acronym}:AV1', @NULL, 7,
-  @NULL, '${__acronym}-AV1', 0, 1, 0,
-  1, '${__name} Analog Value 1', 1,
-  'polito', NOW(), 'polito', NOW()
-);
+
 
 INSERT INTO Measurement (
   HistorianID, DeviceID, PointTag, AlternateTag, SignalTypeID,

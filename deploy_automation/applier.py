@@ -154,10 +154,15 @@ def build_pdc_topology(paths_json):
                     "pmus": [pmu],
                     "port": calc_port(child)
                 })
+    def pmu_sort_key(pmu_name):
+        return int(pmu_name.split('-')[-1])
 
-    # sets → lists
+    # sets → sorted lists
     for c in config:
-        config[c]["outputstream"] = list(config[c]["outputstream"])
+        config[c]["outputstream"] = sorted(
+            config[c]["outputstream"],
+            key=pmu_sort_key
+        )
 
     return config
 
