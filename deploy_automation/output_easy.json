@@ -2,7 +2,7 @@
    "paths": [
      ["PMU-1","cluster1","cluster3","cluster5"],
      ["PMU-2","cluster2","cluster3","cluster5"],
-     ["PMU-3","cluster3","cluster5"]
+     ["PMU-3","cluster5"]
    ]
 }
    
