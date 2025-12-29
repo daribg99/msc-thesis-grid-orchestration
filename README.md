@@ -4,7 +4,7 @@ This repository contains drafts, experiments and notes for the thesis. The work 
 
 Status
 - 🔧 In development
-- 📅 Last updated: 22 December 2025
+- 📅 Last updated: 29 December 2025
 
 Folders content:
 - `deploy/`: deployment for PDCs and PMUs
