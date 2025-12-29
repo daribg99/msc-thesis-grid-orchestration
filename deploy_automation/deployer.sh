@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # .../TESI/deploy_automation
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 SCRIPT_NAME="$(basename "$0")"
 IS_FIRST_DEPLOY=0
 
@@ -33,9 +36,13 @@ if [ $# -lt 1 ]; then
 fi
 
 JSON="$1"
-OUT_DIR="${2:-kubeconfigs}"
+if [[ "$JSON" != /* ]]; then
+  JSON="$REPO_ROOT/$JSON"
+fi
+OUT_DIR="${2:-$SCRIPT_DIR/kubeconfigs}"
 MERGED="${OUT_DIR}/merged.yaml"
 mkdir -p "$OUT_DIR"
+
 if [ ! -f "$MERGED" ]; then
     IS_FIRST_DEPLOY=1
 fi
@@ -369,7 +376,8 @@ echo
 echo
 echo "🏗️  Setup Percona XtraDB sul cluster DB ('$DB_CLUSTER')..."
 
-PERCONA_DIR="../../percona-xtradb-cluster-operator/deploy"
+#PERCONA_DIR="$REPO_ROOT/percona-xtradb-cluster-operator/deploy"
+PERCONA_DIR="/home/dario/Scrivania/DEPLOY INFRASTRUCTURE/percona-xtradb-cluster-operator/deploy"
 
 if [ ! -d "$PERCONA_DIR" ]; then
   echo "❌ Percona directory not found: $PERCONA_DIR" >&2
@@ -620,7 +628,7 @@ fi
 echo
 echo "🚀 PMU Deployment..."
 
-PMU_DIR="../deploy"
+PMU_DIR="$REPO_ROOT/deploy"
 
 if [ ! -d "$PMU_DIR" ]; then
   echo "❌ Directory for PMU not found: $PMU_DIR" >&2

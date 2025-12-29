@@ -10,15 +10,28 @@ from modelling_algorithms.modules.visualizer import draw_graph
 from modelling_algorithms.modules.placement_pdc import place_pdcs_greedy, place_pdcs_random, place_pdcs_bruteforce, q_learning_placement
 from modelling_algorithms.modules.gnn import train_with_policy_gradient
 
-RUNTIME_FILE = "runtime_results/runtime.log"
-OUTPUT_JSON = "runtime_results/output.json"
-DEBUG_SKIP_DEPLOY = True  # Set to True to skip deployer/applier for debugging
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent          # .../TESI/deploy_automation
+REPO_ROOT  = SCRIPT_DIR.parent                        # .../TESI
+
+DEPLOY_DIR   = REPO_ROOT / "deploy_automation"
+RUNTIME_DIR  = REPO_ROOT / "runtime_results"
+
+RUNTIME_FILE = str(RUNTIME_DIR / "runtime.log")
+OUTPUT_JSON  = str(RUNTIME_DIR / "output.json")
+
+DEPLOYER_SH  = DEPLOY_DIR / "deployer.sh"
+APPLIER_PY   = DEPLOY_DIR / "applier.py"
+
+DEBUG_SKIP_DEPLOY = False  # Set to True to skip deployer/applier for debugging
 
 # ================== Utility Functions ==================
 
-def run_command(cmd):
+def run_command(cmd, cwd=None):
     process = subprocess.Popen(
         cmd,
+        cwd=cwd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -28,6 +41,7 @@ def run_command(cmd):
         print(line, end="")
     process.wait()
     return process.returncode
+
 
 
 def format_hms(seconds):
@@ -124,13 +138,14 @@ def choose_algorithm(G):
 # ================== Main Loop ==================
 
 def main():
-    os.makedirs(os.path.dirname(RUNTIME_FILE), exist_ok=True)
+
+    os.makedirs(RUNTIME_DIR, exist_ok=True)
 
     with open(RUNTIME_FILE, "w") as f:
         f.write("=== Runtime summary ===\n")
 
     print("🌐 Creating initial graph...\n")
-    G = create_graph(seed=42)
+    G = create_graph(num_candidates=5, num_pmus=3, seed=None)
 
     while True:
         print("\n🔄 Updating network conditions...")
@@ -140,12 +155,12 @@ def main():
 
         print("\n⚙️ Running placement algorithm...")
 
-        # ✅ FIX: define total_start BEFORE the deploy block so it's always set
         total_start = time.perf_counter()
 
         pdcs, path, max_latency = choose_algorithm(G)
         print("✅ PDCs assigned in clusters:", pdcs)
-
+        # Draw updated graph
+        draw_graph(G, pdcs=pdcs, paths=path, max_latency=max_latency)
         # Save result to output.json (to feed deployer/applier)
         import json
         paths_list = normalize_paths(path)
@@ -153,8 +168,8 @@ def main():
         with open(OUTPUT_JSON, "w") as f:
             json.dump(
                 {
-                    "path": path,                     # struttura ricca (per analisi)
-                    "paths": paths_list,               # struttura semplice (per deploy)
+                    "path": path,                     
+                    "paths": paths_list,               
                     "pdcs": sorted(list(pdcs)),
                     "max_latency": max_latency
                 },
@@ -167,14 +182,14 @@ def main():
         # --- Run deployer and applier ---
         if not DEBUG_SKIP_DEPLOY:
             steps = [
-                (["bash", "deployer.sh", OUTPUT_JSON], "Deployer"),
-                (["python3", "applier.py", OUTPUT_JSON], "Applier")
+                (["bash", str(DEPLOYER_SH), OUTPUT_JSON], "Deployer"),
+                (["python3", "-u", str(APPLIER_PY), OUTPUT_JSON], "Applier"),
             ]
 
             for cmd, label in steps:
                 print(f"\n🚀 Executing {label}: {' '.join(cmd)}\n")
                 start = time.perf_counter()
-                code = run_command(cmd)
+                code = run_command(cmd, cwd=str(REPO_ROOT))
                 end = time.perf_counter()
                 elapsed = end - start
                 write_runtime(label, elapsed)
@@ -189,10 +204,9 @@ def main():
 
         total_end = time.perf_counter()
         total_elapsed = total_end - total_start
+        write_runtime("Total Iteration", total_elapsed)
         print(f"\n🕒 Total iteration time: {format_hms(total_elapsed)}")
 
-        # Draw updated graph
-        draw_graph(G, pdcs=pdcs, paths=path, max_latency=max_latency)
 
         # Ask if user wants to continue
         cont = input("\n🔁 Repeat the process? (y/n): ").lower()

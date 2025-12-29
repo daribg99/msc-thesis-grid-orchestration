@@ -3,17 +3,25 @@ import json
 import sys
 import subprocess
 import time
+from pathlib import Path
 from collections import defaultdict, deque
 
 
 # --------------------------------------------------------
 #   HELPER: run command
 # --------------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parent
+OPENPDC_CLI = BASE_DIR / "openpdc_cli.sh"
 
 def run_cmd(cmd):
-    print(f"\n>>> RUNNING:\n{cmd}\n")
-    result = subprocess.run(cmd, shell=True, check=True, text=True, capture_output=True)
-    print(result.stdout)
+    print("\n>>> RUNNING:\n" + " ".join(cmd) + "\n")
+    result = subprocess.run(cmd, text=True, capture_output=True)
+    if result.stdout:
+        print(result.stdout)
+    if result.returncode != 0:
+        if result.stderr:
+            print(result.stderr)
+        raise subprocess.CalledProcessError(result.returncode, cmd, output=result.stdout, stderr=result.stderr)
 
 
 def get_openpdc_port(cluster):
@@ -240,29 +248,29 @@ def execute_all(order, config):
         print(f"==============================\n")
 
         # 0) HISTORIAN CREATION
-        cmd = (
-            f"./openpdc_cli.sh createhistorian "
-            f"--db-context k3d-cluster-db "
-            f"--openpdc-context {context} "
-            f"--db-ns db --pdc-ns lower "
-            f"--db {cluster} "
-            f"--pod {pod}"
-        )
+        cmd = [
+            str(OPENPDC_CLI), "createhistorian",
+            "--db-context", "k3d-cluster-db",
+            "--openpdc-context", context,
+            "--db-ns", "db", "--pdc-ns", "lower",
+            "--db", cluster,
+            "--pod", pod
+        ]
         run_cmd(cmd)
         
         # 1) ADDPMU
         for pmu in config[cluster]["pmu_direct"]:
             pmu_name = pmu.replace("PMU", "Pmu")
 
-            cmd = (
-                f"./openpdc_cli.sh addpmu "
-                f"--db-context k3d-cluster-db "
-                f"--openpdc-context {context} "
-                f"--db-ns db --pdc-ns lower "
-                f"--name \"{pmu_name}\" "
-                f"--pod {pod} "
-                f"--db {db}"
-            )
+            cmd = [
+                str(OPENPDC_CLI), "addpmu",
+                "--db-context", "k3d-cluster-db",
+                "--openpdc-context", context,
+                "--db-ns", "db", "--pdc-ns", "lower",
+                "--name", pmu_name,
+                "--pod", pod,
+                "--db", db
+            ]
             run_cmd(cmd)
 
         # 2) CONNECTION
@@ -277,19 +285,19 @@ def execute_all(order, config):
             acronym = f"CNC{child_num}C{parent_num}"
 
             
-            cmd = (
-                f"./openpdc_cli.sh connectiontopdc "
-                f"--db-context k3d-cluster-db "
-                f"--openpdc-context {context} "
-                f"--db-ns db --pdc-ns lower "
-                f"--db {db} "
-                f"--name \"{name}\" "
-                f"--pod {pod} "
-                f"--acronym {acronym} "
-                f"--server \"{server_ip}\" "
-                f"--port {port} "
-                f"--pmus \"{pmus}\""
-            )
+            cmd = [
+                str(OPENPDC_CLI), "connectiontopdc",
+                "--db-context", "k3d-cluster-db",
+                "--openpdc-context", context,
+                "--db-ns", "db", "--pdc-ns", "lower",
+                "--db", db,
+                "--name", name,
+                "--pod", pod,
+                "--acronym", acronym,
+                "--server", server_ip,
+                "--port", str(port),
+                "--pmus", pmus
+            ]
             run_cmd(cmd)
 
         # 3) OUTPUTSTREAM
@@ -298,17 +306,17 @@ def execute_all(order, config):
         num = cluster_number(cluster)
         acronym = f"OUTC{num}"
 
-        cmd = (
-            f"./openpdc_cli.sh createoutputstream "
-            f"--db-context k3d-cluster-db "
-            f"--openpdc-context {context} "
-            f"--db-ns db --pdc-ns lower "
-            f"--db {db} "
-            f"--pod {pod} "
-            f"--acronym {acronym} "
-            f"--name {name} "
-            f"--pmus \"{pmus}\""
-        )
+        cmd = [
+            str(OPENPDC_CLI), "createoutputstream",
+            "--db-context", "k3d-cluster-db",
+            "--openpdc-context", context,
+            "--db-ns", "db", "--pdc-ns", "lower",
+            "--db", db,
+            "--pod", pod,
+            "--acronym", acronym,
+            "--name", name,
+            "--pmus", pmus
+        ]
         run_cmd(cmd)
 
 

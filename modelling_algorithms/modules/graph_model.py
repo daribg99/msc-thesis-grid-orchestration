@@ -1,67 +1,71 @@
 import networkx as nx
 import random
 
-def create_graph(seed=42):
+import networkx as nx
+import random
+
+def create_graph(
+    num_candidates=4,
+    num_pmus=3,
+    seed=42
+):
     if seed is not None:
         random.seed(seed)
+
     G = nx.Graph()
 
     # Nodo centrale
-    G.add_node("CC", group="core", level=0, processing=10, memory=32, storage=1000,
-               status="online", energy=1.0, role="CC")
+    G.add_node(
+        "CC",
+        role="CC",
+        processing=10,
+        status="online"
+    )
 
-    # Nodi candidati (potranno diventare PDC o restare inutilizzati)
-    for i in range(1, 10):
-        G.add_node(f"N{i}",
-                   group=random.choice(["A", "B"]),
-                   level=random.choice([1, 2]),
-                   #processing=random.randint(3, 6),
-                   processing=10,
-                   memory=random.choice([8, 16]),
-                   storage=random.choice([250, 500]),
-                   status="online",
-                   energy=round(random.uniform(0.85, 0.95), 2),
-                   role="candidate")
+    # Nodi candidati N1..Nn
+    for i in range(1, num_candidates + 1):
+        G.add_node(
+            f"N{i}",
+            role="candidate",
+            processing=10,
+            status="online"
+        )
 
-    # PMU (nodi foglia di livello 3)
-    for i in range(1, 4):
-        G.add_node(f"PMU{i}",
-                   data_rate=100,
-                   group="A",
-                   level=3,
-                   processing=1,
-                   memory=2,
-                   storage=64,
-                   status="online",
-                   energy=round(0.7 + i * 0.01, 2),
-                   role="PMU")
+    # PMU1..PMUm
+    for i in range(1, num_pmus + 1):
+        G.add_node(
+            f"PMU{i}",
+            role="PMU",
+            data_rate=100,
+            status="online"
+        )
 
-    # Definizione archi
-    edges = set([
-        ("CC", "N1"), ("CC", "N2"), ("CC", "N3"),
-        ("N1", "N2"), ("N2", "N3"), ("N3", "N4"),
-        ("N4", "N5"), ("N5", "N6"), ("N6", "N1"),
-        ("N1", "N7"), ("N2", "N8"), ("N3", "N9"),
-        ("N4", "N10"), ("N5", "N11"), ("N6", "N12"),
-        ("N7", "N8"), ("N8", "N9"), ("N9", "N10"),
-        ("N10", "N11"), ("N11", "N12"), ("N12", "N7"),
-        ("N7", "PMU1"), ("N8", "PMU2"), ("N9", "PMU3"),
-        ("N5", "PMU1"), ("N4", "PMU2"), ("N3", "PMU3"),
-        ("N2", "N11"), ("N6", "N9")
-    ])
+    # ---- Archi ----
 
-    for u, v in edges:
-        latency = round(random.uniform(2, 9), 2)
-        bandwidth = random.choice([200])  # in kbps
-        status = "up"
-        link_type = random.choices(["fiber", "ethernet", "wireless"], weights=[0.4, 0.4, 0.2])[0]
+    # CC collegato a tutti i candidati
+    for i in range(1, num_candidates + 1):
+        G.add_edge("CC", f"N{i}",
+                   latency=round(random.uniform(2, 9), 2),
+                   bandwidth=200,
+                   status="up")
 
-        G.add_edge(u, v,
-                   latency=latency,
-                   bandwidth=bandwidth,
-                   status=status,
-                   type=link_type)
+    # Catena / mesh tra candidati
+    for i in range(1, num_candidates):
+        G.add_edge(f"N{i}", f"N{i+1}",
+                   latency=round(random.uniform(2, 9),2),
+                   bandwidth=200,
+                   status="up")
+
+    # Ogni PMU collegata a un candidato casuale
+    for i in range(1, num_pmus + 1):
+        n = random.randint(1, num_candidates)
+        G.add_edge(f"PMU{i}", f"N{n}",
+                   latency=round(random.uniform(2, 9), 2),
+                   bandwidth=200,
+                   status="up")
+
     return G
+
 
 def modify_latency(G):
     while True:
