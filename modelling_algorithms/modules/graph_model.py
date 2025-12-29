@@ -11,7 +11,7 @@ def create_graph(seed=42):
                status="online", energy=1.0, role="CC")
 
     # Nodi candidati (potranno diventare PDC o restare inutilizzati)
-    for i in range(1, 13):
+    for i in range(1, 10):
         G.add_node(f"N{i}",
                    group=random.choice(["A", "B"]),
                    level=random.choice([1, 2]),

@@ -225,6 +225,16 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
         else:
             print("\n⚠️ No valid path found.")
 
+        pdcs = set()
+        pdc_to_pmus = {}
+
+        for pmu, data in pmu_paths.items():
+            path = data["path"]
+            for node in path[1:-1]:
+                if G.nodes[node].get("role") not in {"PMU", "CC"}:
+                    pdcs.add(node)
+                    pdc_to_pmus.setdefault(node, set()).add(pmu)
+
         return pdcs, pmu_paths, max_latency
 
 
