@@ -39,7 +39,7 @@ def format_hms(seconds):
     elif minutes > 0:
         return f"{minutes}m {secs:05.2f}s"
     else:
-        return f"{secs:05.2f}s"
+        return f"{secs*1000:.2f} ms"
 
 
 def write_runtime(label, seconds):
@@ -92,28 +92,40 @@ def choose_algorithm(G):
         return choose_algorithm(G)
 
     flag_splitting = input("Enable cluster splitting? (y/n): ").lower() == 'y'
+    max_latency = int(input("Enter maximum latency (ms): "))
+
+    # ⏱️ Start timer ONLY for the algorithm execution (no user input time)
+    start = time.perf_counter()
 
     if choice == "1":
-        max_latency = int(input("Enter maximum latency (ms): "))
-        return place_pdcs_greedy(G, max_latency, flag_splitting)
+        result = place_pdcs_greedy(G, max_latency, flag_splitting)
+        label = "Placement(Greedy)"
     elif choice == "2":
-        max_latency = int(input("Enter maximum latency (ms): "))
         seed = int(input("Enter seed (default=42): ") or 42)
-        return place_pdcs_random(G, max_latency, seed, flag_splitting)
+        result = place_pdcs_random(G, max_latency, seed, flag_splitting)
+        label = "Placement(Random)"
     elif choice == "3":
-        max_latency = int(input("Enter maximum latency (ms): "))
-        return q_learning_placement(G, max_latency)
+        result = q_learning_placement(G, max_latency)
+        label = "Placement(Q-Learn)"
     elif choice == "4":
-        max_latency = int(input("Enter maximum latency (ms): "))
-        return train_with_policy_gradient(G, max_latency)
+        result = train_with_policy_gradient(G, max_latency)
+        label = "Placement(GNN-PG)"
     elif choice == "5":
-        max_latency = int(input("Enter maximum latency (ms): "))
-        return place_pdcs_bruteforce(G, max_latency, flag_splitting)
+        result = place_pdcs_bruteforce(G, max_latency, flag_splitting)
+        label = "Placement(Bruteforce)"
+
+    elapsed = time.perf_counter() - start
+    write_runtime(label, elapsed)
+    print(f"⏱️ {label} time (algorithm only): {format_hms(elapsed)}")
+
+    return result
 
 
 # ================== Main Loop ==================
 
 def main():
+    os.makedirs(os.path.dirname(RUNTIME_FILE), exist_ok=True)
+
     with open(RUNTIME_FILE, "w") as f:
         f.write("=== Runtime summary ===\n")
 
@@ -127,8 +139,10 @@ def main():
         modify_bandwidth(G)
 
         print("\n⚙️ Running placement algorithm...")
-        
+
+        # ✅ FIX: define total_start BEFORE the deploy block so it's always set
         total_start = time.perf_counter()
+
         pdcs, path, max_latency = choose_algorithm(G)
         print("✅ PDCs assigned in clusters:", pdcs)
 
@@ -148,7 +162,6 @@ def main():
                 indent=4
             )
 
-
         print(f"💾 Results saved to {OUTPUT_JSON}")
 
         # --- Run deployer and applier ---
@@ -158,7 +171,6 @@ def main():
                 (["python3", "applier.py", OUTPUT_JSON], "Applier")
             ]
 
-            total_start = time.perf_counter()
             for cmd, label in steps:
                 print(f"\n🚀 Executing {label}: {' '.join(cmd)}\n")
                 start = time.perf_counter()
@@ -172,8 +184,8 @@ def main():
                     break
 
                 print(f"✅ {label} completed successfully!")
-            else:
-                print("🧪 DEBUG MODE: deployer/applier skipped")    
+        else:
+            print("🧪 DEBUG MODE: deployer/applier skipped")
 
         total_end = time.perf_counter()
         total_elapsed = total_end - total_start
