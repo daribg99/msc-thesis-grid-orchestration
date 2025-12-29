@@ -19,4 +19,17 @@ Folders content:
 ```bash
 ./autopdc_configurator.py json_file
 ```
+
+# If you want to try entire setup ( algorithms + deployment )...
+- Run, in the root folder
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+- Finally, in the root folder run
+```bash
+python -m deploy_automation.autopdc_configurator
+```
+
 Note: you need k3d installed. As said before, this is a work in progress, so some parts of the code may not work as expected.

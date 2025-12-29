@@ -5,7 +5,16 @@ import signal
 import os
 import time
 
+from modelling_algorithms.modules.graph_model import create_graph, modify_latency, modify_edge_status, modify_bandwidth
+from modelling_algorithms.modules.visualizer import draw_graph
+from modelling_algorithms.modules.placement_pdc import place_pdcs_greedy, place_pdcs_random, place_pdcs_bruteforce, q_learning_placement
+from modelling_algorithms.modules.gnn import train_with_policy_gradient
+
 RUNTIME_FILE = "runtime.log"
+OUTPUT_JSON = "output.json"
+DEBUG_SKIP_DEPLOY = True  # Set to True to skip deployer/applier for debugging
+
+# ================== Utility Functions ==================
 
 def run_command(cmd):
     process = subprocess.Popen(
@@ -15,18 +24,16 @@ def run_command(cmd):
         text=True,
         bufsize=1
     )
-
     for line in process.stdout:
-        print(line, end="")  
-
+        print(line, end="")
     process.wait()
     return process.returncode
-        
+
+
 def format_hms(seconds):
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = seconds % 60
-    
     if hours > 0:
         return f"{hours}h {minutes}m {secs:05.2f}s"
     elif minutes > 0:
@@ -34,53 +41,154 @@ def format_hms(seconds):
     else:
         return f"{secs:05.2f}s"
 
+
 def write_runtime(label, seconds):
     formatted = format_hms(seconds)
     with open(RUNTIME_FILE, "a") as f:
         f.write(f"{label:<20} {formatted}\n")
-    
-def main():
-    if len(sys.argv) != 2:
-        print(f"Uso: {sys.argv[0]} <config.json>")
-        sys.exit(1)
 
-    json_path = sys.argv[1]
+def normalize_paths(path_dict):
+    cluster_ids = set()
+    for pmu_info in path_dict.values():
+        for node in pmu_info["path"]:
+            if node.startswith("N"):
+                cluster_ids.add(int(node[1:]))
 
-    if not os.path.isfile(json_path):
-        print(f"❌ JSON file not found: {json_path}")
-        sys.exit(1)
+    cc_cluster_id = max(cluster_ids) + 1 if cluster_ids else 1
 
-    with open(RUNTIME_FILE, "w") as f:
-        f.write("=== Runtime summary ===\n")
-        
-    steps = [
-        (["bash", "deployer.sh", json_path], "Deployer"),
-        (["python3", "applier.py", json_path], "Applier")
+    def normalize_node(node):
+        if node.startswith("PMU"):
+            return f"PMU-{node[3:]}"
+        elif node.startswith("N"):
+            return f"cluster{node[1:]}"
+        elif node == "CC":
+            return f"cluster{cc_cluster_id}"
+        else:
+            return node
+
+    # Costruisce SOLO la lista dei paths normalizzati
+    return [
+        [normalize_node(n) for n in pmu_info["path"]]
+        for pmu_info in path_dict.values()
     ]
 
-    total_start = time.perf_counter()
-    for cmd, label in steps:
-        print(f"\n🚀 Execute {label}: {' '.join(cmd)}\n")
+# ================== Placement Logic ==================
 
-        start = time.perf_counter()
-        code = run_command(cmd)
-        end = time.perf_counter()
+def choose_algorithm(G):
+    print("\n📘 Choose a placement algorithm:")
+    print("1. Greedy (with maximum latency)")
+    print("2. Random (with specified number of PDCs)")
+    print("3. Q-Learning")
+    print("4. GNN + Policy Gradient")
+    print("5. Bruteforce")
+    print("6. Exit")
 
-        elapsed = end - start
-        write_runtime(label, elapsed)
+    choice = input("Enter your choice (1-6): ")
+    if choice == "6":
+        print("Exiting...")
+        sys.exit(0)
+    elif choice not in ["1", "2", "3", "4", "5"]:
+        print("Invalid choice. Please try again.")
+        return choose_algorithm(G)
+
+    flag_splitting = input("Enable cluster splitting? (y/n): ").lower() == 'y'
+
+    if choice == "1":
+        max_latency = int(input("Enter maximum latency (ms): "))
+        return place_pdcs_greedy(G, max_latency, flag_splitting)
+    elif choice == "2":
+        max_latency = int(input("Enter maximum latency (ms): "))
+        seed = int(input("Enter seed (default=42): ") or 42)
+        return place_pdcs_random(G, max_latency, seed, flag_splitting)
+    elif choice == "3":
+        max_latency = int(input("Enter maximum latency (ms): "))
+        return q_learning_placement(G, max_latency)
+    elif choice == "4":
+        max_latency = int(input("Enter maximum latency (ms): "))
+        return train_with_policy_gradient(G, max_latency)
+    elif choice == "5":
+        max_latency = int(input("Enter maximum latency (ms): "))
+        return place_pdcs_bruteforce(G, max_latency, flag_splitting)
+
+
+# ================== Main Loop ==================
+
+def main():
+    with open(RUNTIME_FILE, "w") as f:
+        f.write("=== Runtime summary ===\n")
+
+    print("🌐 Creating initial graph...\n")
+    G = create_graph(seed=42)
+
+    while True:
+        print("\n🔄 Updating network conditions...")
+        modify_latency(G)
+        modify_edge_status(G)
+        modify_bandwidth(G)
+
+        print("\n⚙️ Running placement algorithm...")
         
-        if code != 0:
-            print(f"\n❌ {label} failed with exit code {code}. Aborting.")
-            sys.exit(code)
+        total_start = time.perf_counter()
+        pdcs, path, max_latency = choose_algorithm(G)
+        print("✅ PDCs assigned in clusters:", pdcs)
 
-        print(f"\n✅ {label} completed successfully!\n")
+        # Save result to output.json (to feed deployer/applier)
+        import json
+        paths_list = normalize_paths(path)
 
-    total_end = time.perf_counter()
-    total_elapsed = total_end - total_start
-    formatted_total = format_hms(total_elapsed)
-    print(f"\n🎉 All completed without errors in {formatted_total}!\n")
+        with open(OUTPUT_JSON, "w") as f:
+            json.dump(
+                {
+                    "path": path,                     # struttura ricca (per analisi)
+                    "paths": paths_list,               # struttura semplice (per deploy)
+                    "pdcs": sorted(list(pdcs)),
+                    "max_latency": max_latency
+                },
+                f,
+                indent=4
+            )
+
+
+        print(f"💾 Results saved to {OUTPUT_JSON}")
+
+        # --- Run deployer and applier ---
+        if not DEBUG_SKIP_DEPLOY:
+            steps = [
+                (["bash", "deployer.sh", OUTPUT_JSON], "Deployer"),
+                (["python3", "applier.py", OUTPUT_JSON], "Applier")
+            ]
+
+            total_start = time.perf_counter()
+            for cmd, label in steps:
+                print(f"\n🚀 Executing {label}: {' '.join(cmd)}\n")
+                start = time.perf_counter()
+                code = run_command(cmd)
+                end = time.perf_counter()
+                elapsed = end - start
+                write_runtime(label, elapsed)
+
+                if code != 0:
+                    print(f"❌ {label} failed with exit code {code}. Aborting this iteration.")
+                    break
+
+                print(f"✅ {label} completed successfully!")
+            else:
+                print("🧪 DEBUG MODE: deployer/applier skipped")    
+
+        total_end = time.perf_counter()
+        total_elapsed = total_end - total_start
+        print(f"\n🕒 Total iteration time: {format_hms(total_elapsed)}")
+
+        # Draw updated graph
+        draw_graph(G, pdcs=pdcs, paths=path, max_latency=max_latency)
+
+        # Ask if user wants to continue
+        cont = input("\n🔁 Repeat the process? (y/n): ").lower()
+        if cont != 'y':
+            print("👋 Exiting loop.")
+            break
 
 
 if __name__ == "__main__":
-    signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(1))     # Clean CTRL-C handling
+    signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(1))
     main()

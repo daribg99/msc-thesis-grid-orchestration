@@ -100,4 +100,9 @@ def draw_graph(G, pdcs=None, paths=None, max_latency=None):
     plt.title("Graph with role and selected path", fontsize=12)
     plt.axis("off")
     plt.tight_layout()
+    plt.savefig("graph.png", dpi=300, bbox_inches="tight")
     plt.show(block=False)
+    plt.close()
+
+
+
