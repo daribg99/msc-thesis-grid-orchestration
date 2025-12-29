@@ -1,5 +1,3 @@
-runtime.log
-deploy_automation/kubeconfig*
+deploy_automation/kubeconfigs*
 .venv/
-graph.png
-output.json
+runtime_results/

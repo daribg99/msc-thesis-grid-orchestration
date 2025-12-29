@@ -1,6 +1,8 @@
+import matplotlib 
 import matplotlib.pyplot as plt
 import networkx as nx
 from matplotlib.patches import Patch
+import os
 
 def draw_graph(G, pdcs=None, paths=None, max_latency=None):
     if pdcs is None:
@@ -100,9 +102,23 @@ def draw_graph(G, pdcs=None, paths=None, max_latency=None):
     plt.title("Graph with role and selected path", fontsize=12)
     plt.axis("off")
     plt.tight_layout()
-    plt.savefig("graph.png", dpi=300, bbox_inches="tight")
-    plt.show(block=False)
+    
+    os.makedirs("runtime_results", exist_ok=True)
+
+    plt.savefig("runtime_results/graph.png", dpi=300, bbox_inches="tight")
+
+    backend = matplotlib.get_backend().lower()
+
+    if backend not in {"agg", "pdf", "ps", "svg"}:
+        plt.show(block=False)
+    else:
+        print(
+            f"ℹ️  Matplotlib backend '{backend}' is non-interactive.\n"
+            "   Graph saved to \"runtime_results\" folder only."
+        )
+
     plt.close()
+
 
 
 

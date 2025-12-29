@@ -10,8 +10,8 @@ from modelling_algorithms.modules.visualizer import draw_graph
 from modelling_algorithms.modules.placement_pdc import place_pdcs_greedy, place_pdcs_random, place_pdcs_bruteforce, q_learning_placement
 from modelling_algorithms.modules.gnn import train_with_policy_gradient
 
-RUNTIME_FILE = "runtime.log"
-OUTPUT_JSON = "output.json"
+RUNTIME_FILE = "runtime_results/runtime.log"
+OUTPUT_JSON = "runtime_results/output.json"
 DEBUG_SKIP_DEPLOY = True  # Set to True to skip deployer/applier for debugging
 
 # ================== Utility Functions ==================
