@@ -300,7 +300,7 @@ for raw in "${ORDERED_CLUSTERS[@]}"; do
   p2=$((30065 + offset))
   p3=$((30099 + offset))
 
-  echo "   ➕ Creating k3d cluster '$cname' (ports: $p1:30085, $p2:30065, $p3:30099)..."
+  echo "   ➕ Creating k3d cluster '$cname' (ports: $p1:$p1, $p2:$p2, $p3:$p3)..."
   k3d cluster create "$cname" \
     --image rancher/k3s:v1.29.4-k3s1 \
     -p "${p1}:${p1}@server:0" \
@@ -604,7 +604,7 @@ if [ "$IS_FIRST_DEPLOY" -eq 1 ]; then
     echo
   done
 else 
-  echo "🔄 Redeploy detected: restarting all openPDC pods on every cluster..."
+  echo "🔄 Redeploy detected: restarting all openPDC pods on every already existing cluster and deploy new PDC on new ones..."
 
   for c in "${ORDERED_CLUSTERS[@]}"; do
     cname="$(normalize_cluster_name "$c")"

@@ -365,7 +365,7 @@ def place_pdcs_bruteforce(G, max_latency, flag_splitting=True, max_paths_per_pmu
         return latency
 
     def check_splitting(pdc_nodes, pmu_paths):
-        # ritorna True se esiste splitting (divergenza) su qualche PDC condiviso
+        # return True if existe splitting (divergence) on some shared PDC
         pdc_to_pmus = {}
         for pmu, data in pmu_paths.items():
             path = data["path"]
@@ -379,11 +379,11 @@ def place_pdcs_bruteforce(G, max_latency, flag_splitting=True, max_paths_per_pmu
                 for pmu in pmus:
                     path = pmu_paths[pmu]["path"]
                     idx = path.index(pdc)
-                    sub_path = path[idx:]  # path da pdc a cc
+                    sub_path = path[idx:]  # path from pdc to cc
                     if ref_path is None:
                         ref_path = sub_path
                     elif ref_path != sub_path:
-                        # splitting trovato
+                        # splitting detected
                         # print(f"❌ Splitting detected at PDC {pdc} for PMUs {pmus}")
                         return True
         return False
@@ -400,11 +400,11 @@ def place_pdcs_bruteforce(G, max_latency, flag_splitting=True, max_paths_per_pmu
     best_paths = {}
     best_bandwidth_usage = {}
 
-    # iteriamo tutte le combinazioni di PDC
+    # iterate over all combinations of PDC
     for k in range(1, len(candidate_nodes) + 1):
         for pdc_nodes in combinations(candidate_nodes, k):
             pdc_nodes = set(pdc_nodes)
-            # per ogni PMU calcola l'insieme di path possibili nel sottografo limitato ai nodi ammessi
+            # for each PMU calculate the set of possible paths in the subgraph limited to allowed nodes
             pmu_to_paths = {}
             valid_combination_of_pdc = True
             for pmu in pmu_nodes:
@@ -416,14 +416,14 @@ def place_pdcs_bruteforce(G, max_latency, flag_splitting=True, max_paths_per_pmu
                     if u in allowed_nodes and v in allowed_nodes:
                         if G[u][v].get("status", "up") == "up":
                             subgraph.add_edge(u, v, **G[u][v])
-                # prendi tutti i semplici path
+                # take all simple paths from pmu to cc_node
                 try:
                     all_paths = list(nx.all_simple_paths(subgraph, source=pmu, target=cc_node, cutoff=5))
-                    # opzionalmente ordina per latenza e/o limita il numero
+                    # optionally sort by latency and/or limit the number of paths
                     all_paths_sorted = sorted(all_paths, key=lambda p: compute_path_latency(p, G, pdc_nodes))
                     if max_paths_per_pmu is not None:
                         all_paths_sorted = all_paths_sorted[:max_paths_per_pmu]
-                    # se non ci sono path possibili, la combinazione di PDC è non valida
+                    # if no possible paths, the combination of PDC is not valid
                     if not all_paths_sorted:
                         valid_combination_of_pdc = False
                         break
@@ -435,17 +435,17 @@ def place_pdcs_bruteforce(G, max_latency, flag_splitting=True, max_paths_per_pmu
             if not valid_combination_of_pdc:
                 continue
 
-            # ora generiamo tutte le combinazioni cartesiane di path (una scelta per PMU)
+            # now generate all Cartesian combinations of paths (one choice per PMU)
             pmu_list = list(pmu_nodes)
             paths_product_iter = product(*(pmu_to_paths[pmu] for pmu in pmu_list))
 
             for paths_choice in paths_product_iter:
-                # costruisci current_path dal prodotto
+                # build current_path from the product
                 current_path = {}
                 for pmu, path in zip(pmu_list, paths_choice):
                     current_path[pmu] = {"path": path}
 
-                # controlla che ogni path sia una catena valida (PMU -> PDC* -> CC)
+                # check that each path is a valid chain (PMU -> PDC* -> CC)
                 valid_paths = True
                 for pmu, data in current_path.items():
                     if not is_valid_chain(data["path"], pdc_nodes, G):
@@ -454,12 +454,12 @@ def place_pdcs_bruteforce(G, max_latency, flag_splitting=True, max_paths_per_pmu
                 if not valid_paths:
                     continue
 
-                # controllo splitting se non permesso
+                # check splitting if not allowed
                 if not flag_splitting:
                     if check_splitting(pdc_nodes, current_path):
-                        continue  # scarta questa combinazione di path
+                        continue  # discard this combination of paths
 
-                # verifica la banda: accumula l'uso sugli archi
+                # check bandwidth: accumulate usage on edges
                 bandwidth_usage = {}
                 bandwidth_ok = True
                 for pmu in pmu_list:
@@ -474,7 +474,7 @@ def place_pdcs_bruteforce(G, max_latency, flag_splitting=True, max_paths_per_pmu
                             break
                     if not bandwidth_ok:
                         break
-                    # se ok, aggiorna l'uso (ma solo dopo verifica per questo pmu)
+                    # if ok, update usage (but only after verification for this pmu)
                     for u, v in zip(path, path[1:]):
                         edge = (u, v) if (u, v) in G.edges else (v, u)
                         bandwidth_usage[edge] = bandwidth_usage.get(edge, 0) + G.nodes[pmu].get("data_rate", 0)
@@ -482,7 +482,7 @@ def place_pdcs_bruteforce(G, max_latency, flag_splitting=True, max_paths_per_pmu
                 if not bandwidth_ok:
                     continue
 
-                # calcola la latenza totale per questa combinazione di path
+                # calculate total latency for this combination of paths
                 total_latency = 0
                 for pmu in pmu_list:
                     path = current_path[pmu]["path"]
@@ -490,28 +490,28 @@ def place_pdcs_bruteforce(G, max_latency, flag_splitting=True, max_paths_per_pmu
                     current_path[pmu]["delay"] = latency
                     total_latency += latency
 
-                # possibile vincolo su max_latency: se vuoi applicarlo per singola PMU o totale, adatta qui.
-                # qui manteniamo la logica precedente: ottimizziamo la somma delle latenze
+                # possible constraint on max_latency: if you want to apply it per single PMU or total, adapt here.
+                # here we keep the previous logic: optimize the sum of latencies
                 if total_latency < best_total_latency:
                     best_config = list(pdc_nodes)
                     best_total_latency = total_latency
                     best_paths = current_path.copy()
                     best_bandwidth_usage = bandwidth_usage.copy()
 
-    # output come prima
+    # output as before
     if best_config:
-        print("\n📍 Migliori path PMU → CC con configurazione PDC ottima:")
+        print("\n📍 Best PMU → CC paths with optimal PDC configuration:")
         for pmu, data in best_paths.items():
             path = data["path"]
             delay = data["delay"]
-            print(f"{pmu} → CC: {' → '.join(path)}, Ritardo = {delay:.2f} ms")
-            print(f"Banda usata per ogni arco:")
+            print(f"{pmu} → CC: {' → '.join(path)}, Delay = {delay:.2f} ms")
+            print(f"Bandwidth used for each edge:")
             for u, v in zip(path, path[1:]):
                 edge = (u, v) if (u, v) in G.edges else (v, u)
                 usage = best_bandwidth_usage.get(edge) or best_bandwidth_usage.get((edge[1], edge[0]), 0)
                 print(f"  {u}–{v}: {usage} kbps")
     else:
-        print("❌ Nessuna configurazione valida trovata.")
+        print("❌ No valid configuration found.")
 
     return best_config if best_config else [], best_paths, max_latency
 

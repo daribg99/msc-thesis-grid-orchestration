@@ -24,7 +24,7 @@ OUTPUT_JSON  = str(RUNTIME_DIR / "output.json")
 DEPLOYER_SH  = DEPLOY_DIR / "deployer.sh"
 APPLIER_PY   = DEPLOY_DIR / "applier.py"
 
-DEBUG_SKIP_DEPLOY = False  # Set to True to skip deployer/applier for debugging
+DEBUG_SKIP_DEPLOY = True  # Set to True to skip deployer/applier for debugging
 
 # ================== Utility Functions ==================
 
@@ -141,12 +141,16 @@ def main():
 
     os.makedirs(RUNTIME_DIR, exist_ok=True)
 
+    if DEBUG_SKIP_DEPLOY:
+        print("🧪 DEBUG MODE: deployer/applier will be skipped.")
+        
     with open(RUNTIME_FILE, "w") as f:
         f.write("=== Runtime summary ===\n")
 
     print("🌐 Creating initial graph...\n")
     G = create_graph(num_candidates=5, num_pmus=3, seed=None)
-
+    draw_graph(G)
+        
     while True:
         print("\n🔄 Updating network conditions...")
         modify_latency(G)
@@ -199,8 +203,6 @@ def main():
                     break
 
                 print(f"✅ {label} completed successfully!")
-        else:
-            print("🧪 DEBUG MODE: deployer/applier skipped")
 
         total_end = time.perf_counter()
         total_elapsed = total_end - total_start
