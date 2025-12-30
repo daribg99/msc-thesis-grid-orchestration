@@ -24,7 +24,7 @@ OUTPUT_JSON  = str(RUNTIME_DIR / "output.json")
 DEPLOYER_SH  = DEPLOY_DIR / "deployer.sh"
 APPLIER_PY   = DEPLOY_DIR / "applier.py"
 
-DEBUG_SKIP_DEPLOY = True  # Set to True to skip deployer/applier for debugging
+DEBUG_SKIP_DEPLOY = False  # Set to True to skip deployer/applier for debugging
 
 # ================== Utility Functions ==================
 

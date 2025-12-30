@@ -453,157 +453,7 @@ echo
 echo "🚀 Deploy PDC on each cluster (except '$DB_CLUSTER')..."
 echo "-----------------------------------------------------------"
 
-if [ "$IS_FIRST_DEPLOY" -eq 1 ]; then
-  for c in "${ORDERED_CLUSTERS[@]}"; do
-    cname="$(normalize_cluster_name "$c")"          # es: cluster-1
-    if [[ "$cname" == "$DB_CLUSTER" ]]; then
-      echo "➡️  Skipping DB cluster '$cname'"
-      continue
-    fi
-
-    ctx="$(normalize_to_ctx "$cname")"              # es: k3d-cluster-1
-    echo "➡️  Cluster JSON: '$c'  → context: '$ctx'"
-
-    if ! kubectl --kubeconfig "$MERGED" config get-contexts -o name | grep -qx "$ctx"; then
-      echo "   ⚠️  Context '$ctx' NOT present in the merged kubeconfig. Skip."
-      echo
-      continue
-    fi
-
-    # Namespace on the target PDC cluster
-    if ! kubectl --kubeconfig "$MERGED" --context "$ctx" get ns "$NAMESPACE" >/dev/null 2>&1; then
-      echo "   📦 Creating namespace '$NAMESPACE'..."
-      kubectl --kubeconfig "$MERGED" --context "$ctx" create ns "$NAMESPACE"
-    fi
-
-    # 1) Copy secret from DB cluster → target cluster (lower namespace)
-  echo "   🔐 Sync secret 'cluster-db-secrets' from DB → $ctx/$NAMESPACE ..."
-
-  kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db get secret cluster-db-secrets -o yaml \
-    | sed '
-        /resourceVersion:/d
-        /uid:/d
-        /creationTimestamp:/d
-        /selfLink:/d
-        /managedFields:/,/^[^ ]/d
-        /^  namespace:/d
-      ' \
-    | sed "s/^metadata:\n  name: .*/metadata:\n  name: cluster-db-secrets/" \
-    | sed "s/^metadata:$/metadata:\n  namespace: $NAMESPACE/" \
-    | kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" apply -f - >/dev/null
-
-
-    # 2) Preparing patched YAML file for this cluster
-  #    - DB_NAME: cluster1/cluster2/...  (removing the '-')
-  #    - DB_URL:  IP of the DB (from docker inspect)
-  #    - Service name: openpdc-low-<cluster> (per distinguerlo negli script)
-
-  db_name_no_dash="$(echo "$cname" | sed 's/-//')"
-  svc_name="openpdc-$db_name_no_dash"
-
-  TMP_PER_CLUSTER="$(mktemp)"
-  port_offset="$(cluster_port_offset "$cname")"
-  echo " 🛠️ Patch con awk (DB_NAME=$db_name_no_dash, DB_URL=$DB_IP, SVC_NAME=$svc_name, OFFSET=$port_offset)..."
-
-  awk -v db="$db_name_no_dash" \
-    -v ip="$DB_IP" \
-    -v svc="$svc_name" \
-    -v offset="$port_offset" '
-  BEGIN {
-      isService = 0
-
-      # Calcolo offset porte
-      console_np = 30085 + offset
-      output_np  = 30099 + offset
-      datapub_np = 30065 + offset
-  }
-
-  # Entrata nella sezione Service
-  /^kind:[[:space:]]*Service/ {
-      isService = 1
-      print
-      next
-  }
-
-  # Nuovo "kind:" → uscita dal Service
-  /^kind:/ {
-      isService = 0
-      print
-      next
-  }
-
-  # Patch nome Service openpdc
-  isService && $1 == "name:" && $2 == "openpdc" {
-      sub(/openpdc$/, svc)
-      print
-      next
-  }
-
-  # Patch DB_NAME
-  /name:[[:space:]]*DB_NAME/ {
-      print
-      if (getline line) {
-          sub(/value:.*/, "value: " db, line)
-          print line
-      }
-      next
-  }
-
-  # Patch DB_URL
-  /name:[[:space:]]*DB_URL/ {
-      print
-      if (getline line) {
-          sub(/value:.*/, "value: \"" ip "\"", line)
-          print line
-      }
-      next
-  }
-
-  # --- PATCH NODEPORT DINAMICHE ---
-
-  # console (8500 → 30085)
-  /nodePort:[[:space:]]*30085/ {
-      printf("      nodePort: %d\n", console_np)
-      next
-  }
-
-  # datapublisher (6165 → 30065)
-  /nodePort:[[:space:]]*30065/ {
-      printf("      nodePort: %d\n", datapub_np)
-      next
-  }
-
-  # outputstream (4712 → 30099)
-  /nodePort:[[:space:]]*30099/ {
-      printf("      nodePort: %d\n", output_np)
-      next
-  }
-
-  # Default: stampa la riga
-  {
-      print
-  }
-  ' "$TMP_RAW" > "$TMP_PER_CLUSTER"
-
-
-
-    # 3) Apply patched manifest to the target cluster
-    echo "   📥 kubectl apply -n $NAMESPACE -f <patched>"
-    if kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" apply -f "$TMP_PER_CLUSTER"; then
-      echo "   ✅ Apply OK on '$ctx'"
-      echo "   🔎 Pods:"
-      kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" get pods
-      WORKLOAD_CTX+=("$ctx")
-      WORKLOAD_NS+=("$NAMESPACE")
-      WORKLOAD_NAME+=("openpdc")  
-
-    else
-      echo "   ❌ Apply FAILED on '$ctx' — continuing with the next one" >&2
-    fi
-
-    echo
-  done
-else 
+if [ "$IS_FIRST_DEPLOY" -eq 0 ]; then 
   echo "🔄 Redeploy detected: restarting all openPDC pods on every already existing cluster and deploy new PDC on new ones..."
 
   for c in "${ORDERED_CLUSTERS[@]}"; do
@@ -615,13 +465,168 @@ else
 
     ctx="$(normalize_to_ctx "$cname")"
 
-    echo "   ➤ Deleting openPDC pods in cluster $cname"
-    kubectl --kubeconfig "$MERGED" --context "$ctx" -n lower delete pod -l app=openpdc
+    if kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" get pod -l app=openpdc --no-headers 2>/dev/null | grep -q .; then
+      echo "   ➤ Deleting openPDC pods in cluster $cname"
+      kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" delete pod -l app=openpdc
+    else
+      echo "   🆕 No openPDC pods found in $cname → skip delete. PDC deploy after the delete process"
+    fi
     WORKLOAD_CTX+=("$ctx")
     WORKLOAD_NS+=("$NAMESPACE")
     WORKLOAD_NAME+=("openpdc")   
   done
-fi  
+fi 
+
+for c in "${ORDERED_CLUSTERS[@]}"; do
+  cname="$(normalize_cluster_name "$c")"          # es: cluster-1
+  if [[ "$cname" == "$DB_CLUSTER" ]]; then
+    echo "➡️  Skipping DB cluster '$cname'"
+    continue
+  fi
+
+  ctx="$(normalize_to_ctx "$cname")"              # es: k3d-cluster-1
+  echo "➡️  Cluster JSON: '$c'  → context: '$ctx'"
+
+  if ! kubectl --kubeconfig "$MERGED" config get-contexts -o name | grep -qx "$ctx"; then
+    echo "   ⚠️  Context '$ctx' NOT present in the merged kubeconfig. Skip."
+    echo
+    continue
+  fi
+
+  # Namespace on the target PDC cluster
+  if ! kubectl --kubeconfig "$MERGED" --context "$ctx" get ns "$NAMESPACE" >/dev/null 2>&1; then
+    echo "   📦 Creating namespace '$NAMESPACE'..."
+    kubectl --kubeconfig "$MERGED" --context "$ctx" create ns "$NAMESPACE"
+  fi
+
+  # 1) Copy secret from DB cluster → target cluster (lower namespace)
+echo "   🔐 Sync secret 'cluster-db-secrets' from DB → $ctx/$NAMESPACE ..."
+
+kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db get secret cluster-db-secrets -o yaml \
+  | sed '
+      /resourceVersion:/d
+      /uid:/d
+      /creationTimestamp:/d
+      /selfLink:/d
+      /managedFields:/,/^[^ ]/d
+      /^  namespace:/d
+    ' \
+  | sed "s/^metadata:\n  name: .*/metadata:\n  name: cluster-db-secrets/" \
+  | sed "s/^metadata:$/metadata:\n  namespace: $NAMESPACE/" \
+  | kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" apply -f - >/dev/null
+
+
+  # 2) Preparing patched YAML file for this cluster
+#    - DB_NAME: cluster1/cluster2/...  (removing the '-')
+#    - DB_URL:  IP of the DB (from docker inspect)
+#    - Service name: openpdc-low-<cluster> (per distinguerlo negli script)
+
+db_name_no_dash="$(echo "$cname" | sed 's/-//')"
+svc_name="openpdc-$db_name_no_dash"
+
+TMP_PER_CLUSTER="$(mktemp)"
+port_offset="$(cluster_port_offset "$cname")"
+echo " 🛠️ Patch con awk (DB_NAME=$db_name_no_dash, DB_URL=$DB_IP, SVC_NAME=$svc_name, OFFSET=$port_offset)..."
+
+awk -v db="$db_name_no_dash" \
+  -v ip="$DB_IP" \
+  -v svc="$svc_name" \
+  -v offset="$port_offset" '
+BEGIN {
+    isService = 0
+
+    # Calcolo offset porte
+    console_np = 30085 + offset
+    output_np  = 30099 + offset
+    datapub_np = 30065 + offset
+}
+
+# Entrata nella sezione Service
+/^kind:[[:space:]]*Service/ {
+    isService = 1
+    print
+    next
+}
+
+# Nuovo "kind:" → uscita dal Service
+/^kind:/ {
+    isService = 0
+    print
+    next
+}
+
+# Patch nome Service openpdc
+isService && $1 == "name:" && $2 == "openpdc" {
+    sub(/openpdc$/, svc)
+    print
+    next
+}
+
+# Patch DB_NAME
+/name:[[:space:]]*DB_NAME/ {
+    print
+    if (getline line) {
+        sub(/value:.*/, "value: " db, line)
+        print line
+    }
+    next
+}
+
+# Patch DB_URL
+/name:[[:space:]]*DB_URL/ {
+    print
+    if (getline line) {
+        sub(/value:.*/, "value: \"" ip "\"", line)
+        print line
+    }
+    next
+}
+
+# --- PATCH NODEPORT DINAMICHE ---
+
+# console (8500 → 30085)
+/nodePort:[[:space:]]*30085/ {
+    printf("      nodePort: %d\n", console_np)
+    next
+}
+
+# datapublisher (6165 → 30065)
+/nodePort:[[:space:]]*30065/ {
+    printf("      nodePort: %d\n", datapub_np)
+    next
+}
+
+# outputstream (4712 → 30099)
+/nodePort:[[:space:]]*30099/ {
+    printf("      nodePort: %d\n", output_np)
+    next
+}
+
+# Default: stampa la riga
+{
+    print
+}
+' "$TMP_RAW" > "$TMP_PER_CLUSTER"
+
+
+
+  # 3) Apply patched manifest to the target cluster
+  echo "   📥 kubectl apply -n $NAMESPACE -f <patched>"
+  if kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" apply -f "$TMP_PER_CLUSTER"; then
+    echo "   ✅ Apply OK on '$ctx'"
+    echo "   🔎 Pods:"
+    kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" get pods
+    WORKLOAD_CTX+=("$ctx")
+    WORKLOAD_NS+=("$NAMESPACE")
+    WORKLOAD_NAME+=("openpdc")  
+
+  else
+    echo "   ❌ Apply FAILED on '$ctx' — continuing with the next one" >&2
+  fi
+
+  echo
+done
+ 
 
 
 # --- Deploy PMU ---
