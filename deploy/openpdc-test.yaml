@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openpdc
+  labels:
+    app: openpdc
+spec:
+  selector:
+    matchLabels:
+      app: openpdc
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: openpdc
+    spec:
+      initContainers:
+      - name: openpdc-init
+        image: riccardo170697/test-openpdc-init:13
+        env:
+            - name: DB_ROOTPASS
+              valueFrom:
+                secretKeyRef:
+                  name: cluster-db-secrets
+                  key: root
+            - name: DB_USER
+              value: openpdc
+            - name: DB_PASS
+              value: password
+            - name: DB_NAME
+              value: cluster6
+            - name: DB_PORT
+              value: "30950"
+            - name: DB_URL
+              value: "172.18.0.11"
+      containers:
+      - name: openpdc
+        image: claudious96/openpdc:latest
+        env:
+            - name: DB_USER
+              value: openpdc
+            - name: DB_PASS
+              value: password
+            - name: DB_NAME
+              value: cluster6
+            - name: DB_PORT
+              value: "30950"
+            - name: DB_URL
+              value: "172.18.0.11"
+            - name: NODE_ID
+              value: e7a5235d-cb6f-4864-a96e-a8686f36e599
+        ports:
+        - name: outputstream
+          containerPort: 4712
+          protocol: TCP
+        - name: datapublisher
+          containerPort: 6165
+          protocol: TCP
+        - name: console
+          containerPort: 8500
+          protocol: TCP
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: openpdc-cluster6
+spec:
+  type: NodePort
+  ports:
+    - name: console
+      port: 8500
+      targetPort: 8500
+      nodePort: 30585
+    - name: outputstream
+      port: 4712
+      nodePort: 30599
+    - name: datapublisher
+      port: 6165
+      targetPort: 6165
+      nodePort: 30565
+  selector:
+    app: openpdc

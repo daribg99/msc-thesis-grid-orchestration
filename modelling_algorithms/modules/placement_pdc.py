@@ -30,31 +30,20 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
     pmus = [n for n, d in H.nodes(data=True) if d.get("role") == "PMU"]
     pmu_rate = {pmu: float(H.nodes[pmu].get("data_rate", 0.0)) for pmu in pmus}
 
-        # ------------------------------------------------------------
-    # Patch anti-lock (solo quando NON splitting):
-    # se un candidate X ha PMU attaccate per un totale dem e l'arco X-CC
-    # ha capacità < dem, allora NON permettere X->CC come next-hop,
-    # altrimenti il no-splitting può "bloccare" soluzioni valide via altri nodi.
-    # ------------------------------------------------------------
     if not flag_splitting:
         attached_demand = {}
 
-        # somma dei data_rate delle PMU direttamente collegate a ciascun candidate
         for pmu in pmus:
             for nbr in H.neighbors(pmu):
                 if H.nodes[nbr].get("role") == "candidate":
                     attached_demand[nbr] = attached_demand.get(nbr, 0.0) + pmu_rate[pmu]
 
-        # se cap(X,CC) < domanda totale su X, elimina l'arco X-CC
         for x, dem in attached_demand.items():
             if H.has_edge(x, cc):
                 cap = float(H[x][cc].get("bandwidth", float("inf")))
                 if cap < dem:
                     H.remove_edge(x, cc)
 
-    # -------------------------
-    # Caso splitting=True: greedy semplice
-    # -------------------------
     if flag_splitting:
         used_bw = {}
         pmu_paths = {}
@@ -106,13 +95,8 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
 
         return pdcs, pmu_paths, (max(delays) if delays else 0.0)
 
-        # -------------------------
-    # Caso splitting=False: backtracking BEST-EFFORT
-    # (massimizza #PMU servite, se una non ha path => la salta)
-    # -------------------------
-    K = 50  # aumenta se vuoi più "potenza" (costo maggiore)
+    K = 50  
 
-    # Precalcolo: per ogni PMU, lista di path candidati (entro max_latency)
     candidates = {}
     for pmu in pmus:
         paths_list = []
@@ -131,7 +115,6 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
 
         candidates[pmu] = paths_list
 
-    # Ordine: più vincolate prima (meno alternative)
     order = sorted(pmus, key=lambda p: len(candidates.get(p, [])))
 
     used_bw = {}          # edge -> used
@@ -145,7 +128,6 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
     def can_place(pmu, path):
         demand = pmu_rate[pmu]
 
-        # vincolo no-splitting: next hop unico per ogni candidate nel path
         for i in range(1, len(path) - 1):
             node = path[i]
             if H.nodes[node].get("role") != "candidate":
@@ -154,7 +136,6 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
             if node in next_hop_to_cc and next_hop_to_cc[node] != nxt:
                 return False
 
-        # vincolo banda
         for a, b in zip(path[:-1], path[1:]):
             cap = float(H[a][b].get("bandwidth", float("inf")))
             k = edge_key(a, b)
@@ -186,7 +167,6 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
     def dfs(idx, served, sum_delay):
         nonlocal best_assignment, best_served, best_sum_delay
 
-        # aggiorna best
         if served > best_served or (served == best_served and sum_delay < best_sum_delay):
             best_served = served
             best_sum_delay = sum_delay
@@ -195,14 +175,13 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
         if idx == len(order):
             return
 
-        # bound: anche servendo tutte le rimanenti, posso battere best_served?
         remaining = len(order) - idx
         if served + remaining < best_served:
             return
 
         pmu = order[idx]
 
-        # 1) prova a piazzare la PMU (tutti i suoi candidati)
+        
         for path, d in candidates.get(pmu, []):
             if not can_place(pmu, path):
                 continue
@@ -219,12 +198,10 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
             next_hop_to_cc.update(prev_next)
             rebuild_used_bw_from_assignment()
 
-        # 2) SKIP: non servire questa PMU
         dfs(idx + 1, served, sum_delay)
 
     dfs(0, 0, 0.0)
 
-    # costruisci output nel formato richiesto da draw_graph
     pmu_paths = {}
     pdcs = set()
     delays = []
@@ -321,19 +298,16 @@ def place_pdcs_greedy_no_backtracking(G, max_latency, flag_splitting=False):
         if chosen_path is None:
             continue  # <-- niente None
 
-        # commit bandwidth
         for a, b in zip(chosen_path[:-1], chosen_path[1:]):
             k = edge_key(a, b)
             used_bw[k] = used_bw.get(k, 0.0) + demand
 
-        # commit no-splitting
         if not flag_splitting:
             for i in range(1, len(chosen_path) - 1):
                 node = chosen_path[i]
                 if H.nodes[node].get("role") == "candidate":
                     next_hop_to_cc.setdefault(node, chosen_path[i + 1])
 
-        # store (compatibile con draw_graph)
         pmu_paths[pmu] = {"path": chosen_path, "delay": chosen_delay}
         accepted_delays.append(chosen_delay)
 
@@ -344,7 +318,7 @@ def place_pdcs_greedy_no_backtracking(G, max_latency, flag_splitting=False):
     max_delay_out = max(accepted_delays) if accepted_delays else 0.0
     return pdcs, pmu_paths, max_delay_out
 
-def place_pdcs_random(G, max_latency, seed=None):
+def place_pdcs_random(G, max_latency, seed=None,flag_splitting=True):
         if seed is not None:
             random.seed(seed)
 

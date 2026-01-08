@@ -24,7 +24,7 @@ OUTPUT_JSON  = str(RUNTIME_DIR / "output.json")
 DEPLOYER_SH  = DEPLOY_DIR / "deployer.sh"
 APPLIER_PY   = DEPLOY_DIR / "applier.py"
 
-DEBUG_SKIP_DEPLOY = False  # Set to True to skip deployer/applier for debugging
+DEBUG_SKIP_DEPLOY = True  # Set to True to skip deployer/applier for debugging
 
 # ================== Utility Functions ==================
 
@@ -92,8 +92,8 @@ def choose_algorithm(G):
     print("\n📘 Choose a placement algorithm:")
     print("1. Greedy (with maximum latency)")
     print("2. Random (with specified number of PDCs)")
-    print("3. Q-Learning")
-    print("4. GNN + Policy Gradient")
+    print("3. Q-Learning ( not available yet )")
+    print("4. GNN + Policy Gradient ( not available yet )")
     print("5. Bruteforce")
     print("6. Exit")
 
@@ -101,6 +101,9 @@ def choose_algorithm(G):
     if choice == "6":
         print("Exiting...")
         sys.exit(0)
+    if choice == "3" or choice == "4":
+        print("⚠️ This algorithm is not available yet. Please choose another one.")
+        return choose_algorithm(G)
     elif choice not in ["1", "2", "3", "4", "5"]:
         print("Invalid choice. Please try again.")
         return choose_algorithm(G)
