@@ -24,7 +24,7 @@ OUTPUT_JSON  = str(RUNTIME_DIR / "output.json")
 DEPLOYER_SH  = DEPLOY_DIR / "deployer.sh"
 APPLIER_PY   = DEPLOY_DIR / "applier.py"
 
-DEBUG_SKIP_DEPLOY = True  # Set to True to skip deployer/applier for debugging
+DEBUG_SKIP_DEPLOY = False  # Set to True to skip deployer/applier for debugging
 
 # ================== Utility Functions ==================
 
@@ -90,18 +90,18 @@ def normalize_paths(path_dict):
 
 def choose_algorithm(G):
     print("\n📘 Choose a placement algorithm:")
-    print("1. Greedy (with maximum latency)")
-    print("2. Random (with specified number of PDCs)")
-    print("3. Q-Learning ( not available yet )")
-    print("4. GNN + Policy Gradient ( not available yet )")
-    print("5. Bruteforce")
+    print("1. Bruteforce")
+    print("2. Greedy")
+    print("3. Random ")
+    print("4. Q-Learning ( not available yet )")
+    print("5. GNN + Policy Gradient ( not available yet )")
     print("6. Exit")
 
     choice = input("Enter your choice (1-6): ")
     if choice == "6":
         print("Exiting...")
         sys.exit(0)
-    if choice == "3" or choice == "4":
+    if choice == "4" or choice == "5":
         print("⚠️ This algorithm is not available yet. Please choose another one.")
         return choose_algorithm(G)
     elif choice not in ["1", "2", "3", "4", "5"]:
@@ -115,22 +115,22 @@ def choose_algorithm(G):
     start = time.perf_counter()
 
     if choice == "1":
-        result = place_pdcs_greedy(G, max_latency, flag_splitting)
-        label = "Placement(Greedy)"
+        result = place_pdcs_bruteforce(G, max_latency, flag_splitting)
+        label = "Placement(Bruteforce)"        
     elif choice == "2":
+        result = place_pdcs_greedy(G, max_latency, flag_splitting)
+        label = "Placement(Greedy)"        
+    elif choice == "3":
         seed = int(input("Enter seed (default=42): ") or 42)
         result = place_pdcs_random(G, max_latency, seed, flag_splitting)
-        label = "Placement(Random)"
-    elif choice == "3":
-        result = q_learning_placement(G, max_latency)
-        label = "Placement(Q-Learn)"
+        label = "Placement(Random)"        
     elif choice == "4":
+        result = q_learning_placement(G, max_latency)
+        label = "Placement(Q-Learn)"   
+    elif choice == "5":
         result = train_with_policy_gradient(G, max_latency)
         label = "Placement(GNN-PG)"
-    elif choice == "5":
-        result = place_pdcs_bruteforce(G, max_latency, flag_splitting)
-        label = "Placement(Bruteforce)"
-
+    
     elapsed = time.perf_counter() - start
     write_runtime(label, elapsed)
     print(f"⏱️ {label} time (algorithm only): {format_hms(elapsed)}")
@@ -151,7 +151,7 @@ def main():
         f.write("=== Runtime summary ===\n")
 
     print("🌐 Creating initial graph...\n")
-    G = create_graph(num_candidates=5, num_pmus=3, seed=None)
+    G = create_graph(seed=None, p_extra=0.45)
     draw_graph(G)
         
     while True:

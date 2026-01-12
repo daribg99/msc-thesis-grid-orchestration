@@ -376,8 +376,8 @@ echo
 echo
 echo "🏗️  Setup Percona XtraDB sul cluster DB ('$DB_CLUSTER')..."
 
-#PERCONA_DIR="$REPO_ROOT/percona-xtradb-cluster-operator/deploy"
-PERCONA_DIR="/home/dario/Scrivania/DEPLOY INFRASTRUCTURE/percona-xtradb-cluster-operator/deploy"
+PERCONA_DIR="$REPO_ROOT/percona-xtradb-cluster-operator/deploy"
+#PERCONA_DIR="/home/dario/Scrivania/DEPLOY INFRASTRUCTURE/percona-xtradb-cluster-operator/deploy"
 
 if [ ! -d "$PERCONA_DIR" ]; then
   echo "❌ Percona directory not found: $PERCONA_DIR" >&2

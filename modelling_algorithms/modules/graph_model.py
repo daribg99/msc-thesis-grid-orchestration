@@ -1,70 +1,75 @@
 import networkx as nx
 import random
 
-import networkx as nx
-import random
-
 def create_graph(
-    num_candidates=4,
+    num_candidates=8,
     num_pmus=3,
-    seed=42
+    seed=None,
+    p_extra=0.35,          # probabilità di aggiungere archi extra tra candidati
+    cc_min_links=2,        # minimo collegamenti CC->candidati
+    cc_max_links=None,     # massimo collegamenti CC->candidati (None = fino a num_candidates)
+    pmu_links=1            # collegamenti per ogni PMU verso candidati
 ):
     if seed is not None:
         random.seed(seed)
 
     G = nx.Graph()
 
-    # Nodo centrale
-    G.add_node(
-        "CC",
-        role="CC",
-        processing=10,
-        status="online"
-    )
+    # --- Nodi ---
+    G.add_node("CC", role="CC", processing=10, status="online")
 
-    # Nodi candidati N1..Nn
-    for i in range(1, num_candidates + 1):
-        G.add_node(
-            f"N{i}",
-            role="candidate",
-            processing=10,
-            status="online"
+    candidates = [f"N{i}" for i in range(1, num_candidates + 1)]
+    for n in candidates:
+        G.add_node(n, role="candidate", processing=10, status="online")
+
+    pmus = [f"PMU{i}" for i in range(1, num_pmus + 1)]
+    for p in pmus:
+        G.add_node(p, role="PMU", data_rate=100, status="online")
+
+    # helper per aggiungere archi con attributi
+    def add_edge(u, v):
+        if u == v or G.has_edge(u, v):
+            return
+        G.add_edge(
+            u, v,
+            latency=round(random.uniform(2, 9), 2),
+            bandwidth=200,
+            status="up"
         )
 
-    # PMU1..PMUm
-    for i in range(1, num_pmus + 1):
-        G.add_node(
-            f"PMU{i}",
-            role="PMU",
-            data_rate=100,
-            status="online"
-        )
+    # --- 1) Sottografo candidati: connesso + casuale (non full mesh) ---
+    # (a) Crea prima uno "spanning tree" casuale => garantisce connettività
+    shuffled = candidates[:]
+    random.shuffle(shuffled)
+    for i in range(1, len(shuffled)):
+        u = shuffled[i]
+        v = random.choice(shuffled[:i])  # collega a un nodo precedente a caso
+        add_edge(u, v)
 
-    # ---- Archi ----
+    # (b) Aggiungi archi extra con probabilità p_extra
+    for i in range(len(candidates)):
+        for j in range(i + 1, len(candidates)):
+            if random.random() < p_extra:
+                add_edge(candidates[i], candidates[j])
 
-    # CC collegato a tutti i candidati
-    for i in range(1, num_candidates + 1):
-        G.add_edge("CC", f"N{i}",
-                   latency=round(random.uniform(2, 9), 2),
-                   bandwidth=200,
-                   status="up")
+    # --- 2) Collega CC a un sottoinsieme casuale di candidati ---
+    if cc_max_links is None:
+        cc_max_links = num_candidates
+    cc_min_links = max(1, min(cc_min_links, num_candidates))
+    cc_max_links = max(cc_min_links, min(cc_max_links, num_candidates))
 
-    # Catena / mesh tra candidati
-    for i in range(1, num_candidates):
-        G.add_edge(f"N{i}", f"N{i+1}",
-                   latency=round(random.uniform(2, 9),2),
-                   bandwidth=200,
-                   status="up")
+    k = random.randint(cc_min_links, cc_max_links)
+    for n in random.sample(candidates, k):
+        add_edge("CC", n)
 
-    # Ogni PMU collegata a un candidato casuale
-    for i in range(1, num_pmus + 1):
-        n = random.randint(1, num_candidates)
-        G.add_edge(f"PMU{i}", f"N{n}",
-                   latency=round(random.uniform(2, 9), 2),
-                   bandwidth=200,
-                   status="up")
+    # --- 3) Collega PMU ai candidati (1 o più link ciascuna) ---
+    pmu_links = max(1, min(pmu_links, num_candidates))
+    for p in pmus:
+        for n in random.sample(candidates, pmu_links):
+            add_edge(p, n)
 
     return G
+
 
 
 def modify_latency(G):
