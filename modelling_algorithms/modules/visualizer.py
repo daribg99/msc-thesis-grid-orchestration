@@ -77,15 +77,15 @@ def draw_graph(G, pdcs=None, paths=None, max_latency=None):
                                    edge_color=color)
 
         # Testo con le latenze
+        all_pmus = [n for n in G.nodes if G.nodes[n].get("role") == "PMU"]
         text = "Latency PMU → CC:\n"
-        text += "Max latency: " + str(max_latency) + " ms\n"
-        for pmu, data in paths.items():
-            delay = data["delay"]            
-            text += f"{pmu} → CC: {delay:.2f} ms"
-            if max_latency is not None and delay > max_latency:
-                text += f" ⚠️\n"
+        text += f"Max required latency: {max_latency:.2f} ms\n"
+        for pmu in all_pmus:
+            if paths and pmu in paths:
+                delay = paths[pmu]["delay"]
+                text += f"{pmu} → CC: {delay:.2f} ms ✔️\n"
             else:
-                text += " ✔️\n"
+                text += f"{pmu} → CC: no path available ✗\n"
 
         plt.gcf().text(0.05, 0.85, text, fontsize=9, verticalalignment='top',
                        bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.5'))

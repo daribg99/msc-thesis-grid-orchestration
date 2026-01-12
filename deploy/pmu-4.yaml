@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pmu-4
+binaryData:
+  pmu.bin: MTUwMDAKNDcxMgpDRkcgMSAxMzQKqjEAhgABYOb4aQCtpbgA////AAFwbXUtMSAgICAgICAgICAgAAEAAAADAAEAAEEgICAgICAgICAgICAgICBCICAgICAgICAgICAgICAgQyAgICAgICAgICAgICAgIEUgICAgICAgICAgICAgICAABR9NAAUfTQAFH00BAAFPAAEAAAAZ83QK
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pmu-4
+spec:
+  selector:
+    matchLabels:
+      app: pmu-4
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: pmu-4
+    spec:
+      containers:
+      - name: pmu
+        image: claudious96/pmu-cli
+        command: [ "PMU", "-i", "pmu.bin" ]
+        ports:
+        - containerPort: 4712
+        env:
+        - name: TERM
+          value: xterm
+        volumeMounts:
+        - name: pmu-4
+          mountPath: /pmu.bin
+          subPath: pmu.bin
+        livenessProbe:
+          tcpSocket:
+            port: 4712
+          initialDelaySeconds: 15
+          periodSeconds: 20
+      volumes:
+      - name: pmu-4
+        configMap:
+          name: pmu-4
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pmu-4
+  labels:
+    name: pmu-4
+spec:
+  type: NodePort
+  ports:
+  - port: 4712
+    targetPort: 4712
+  selector:
+    app: pmu-4

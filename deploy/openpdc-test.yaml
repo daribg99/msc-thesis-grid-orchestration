@@ -33,7 +33,7 @@ spec:
             - name: DB_PORT
               value: "30950"
             - name: DB_URL
-              value: "172.18.0.11"
+              value: "172.18.0.14"
       containers:
       - name: openpdc
         image: claudious96/openpdc:latest
@@ -47,7 +47,7 @@ spec:
             - name: DB_PORT
               value: "30950"
             - name: DB_URL
-              value: "172.18.0.11"
+              value: "172.18.0.14"
             - name: NODE_ID
               value: e7a5235d-cb6f-4864-a96e-a8686f36e599
         ports:
