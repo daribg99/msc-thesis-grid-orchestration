@@ -9,7 +9,7 @@ from modelling_algorithms.modules.graph_model import create_graph, modify_latenc
 from modelling_algorithms.modules.visualizer import draw_graph
 from modelling_algorithms.modules.placement_pdc import place_pdcs_greedy, place_pdcs_random, place_pdcs_bruteforce, q_learning_placement
 from modelling_algorithms.modules.gnn import train_with_policy_gradient
-
+from test_functions.delay_applicator import apply_delay
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent          # .../TESI/deploy_automation
@@ -25,6 +25,7 @@ DEPLOYER_SH  = DEPLOY_DIR / "deployer.sh"
 APPLIER_PY   = DEPLOY_DIR / "applier.py"
 
 DEBUG_SKIP_DEPLOY = False  # Set to True to skip deployer/applier for debugging
+DELAY_SKIP = False # Set to True to skip delay application for testing
 
 # ================== Utility Functions ==================
 
@@ -68,7 +69,8 @@ def normalize_paths(path_dict):
             if node.startswith("N"):
                 cluster_ids.add(int(node[1:]))
 
-    cc_cluster_id = max(cluster_ids) + 1 if cluster_ids else 1
+    cc_cluster_id = 27 #  limited to 27 clusters by NodePort range and 100-port offset
+
 
     def normalize_node(node):
         if node.startswith("PMU"):
@@ -111,25 +113,24 @@ def choose_algorithm(G):
     flag_splitting = input("Enable cluster splitting? (y/n): ").lower() == 'y'
     max_latency = int(input("Enter maximum latency (ms): "))
 
-    # ⏱️ Start timer ONLY for the algorithm execution (no user input time)
     start = time.perf_counter()
 
     if choice == "1":
         result = place_pdcs_bruteforce(G, max_latency, flag_splitting)
-        label = "Placement(Bruteforce)"        
+        label = "Placement-Bruteforce"        
     elif choice == "2":
         result = place_pdcs_greedy(G, max_latency, flag_splitting)
-        label = "Placement(Greedy)"        
+        label = "Placement-Greedy"        
     elif choice == "3":
         seed = int(input("Enter seed (default=42): ") or 42)
         result = place_pdcs_random(G, max_latency, seed, flag_splitting)
-        label = "Placement(Random)"        
+        label = "Placement-Random"        
     elif choice == "4":
         result = q_learning_placement(G, max_latency)
-        label = "Placement(Q-Learn)"   
+        label = "Placement-Q-Learn"   
     elif choice == "5":
         result = train_with_policy_gradient(G, max_latency)
-        label = "Placement(GNN-PG)"
+        label = "Placement-GNN-PG"
     
     elapsed = time.perf_counter() - start
     write_runtime(label, elapsed)
@@ -212,6 +213,12 @@ def main():
         write_runtime("Total Iteration", total_elapsed)
         print(f"\n🕒 Total iteration time: {format_hms(total_elapsed)}")
 
+        # --- Apply network delays ---
+        if not DELAY_SKIP:
+            print("🧪 TESTING MODE: applying delay.")
+            apply_delay(G, OUTPUT_JSON)
+        else:
+            print("🧪 DEPLOY MODE: skipping delay application.")
 
         # Ask if user wants to continue
         cont = input("\n🔁 Repeat the process? (y/n): ").lower()
