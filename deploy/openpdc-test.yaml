@@ -29,7 +29,7 @@ spec:
             - name: DB_PASS
               value: password
             - name: DB_NAME
-              value: cluster6
+              value: clustertest
             - name: DB_PORT
               value: "30950"
             - name: DB_URL
@@ -43,7 +43,7 @@ spec:
             - name: DB_PASS
               value: password
             - name: DB_NAME
-              value: cluster6
+              value: clustertest
             - name: DB_PORT
               value: "30950"
             - name: DB_URL
@@ -66,20 +66,20 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: openpdc-cluster6
+  name: openpdc-test
 spec:
   type: NodePort
   ports:
     - name: console
       port: 8500
       targetPort: 8500
-      nodePort: 30585
+      nodePort: 32685
     - name: outputstream
       port: 4712
-      nodePort: 30599
+      nodePort: 32699
     - name: datapublisher
       port: 6165
       targetPort: 6165
-      nodePort: 30565
+      nodePort: 32665
   selector:
     app: openpdc
