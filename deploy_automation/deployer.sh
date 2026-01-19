@@ -99,7 +99,7 @@ cluster_port_offset() {
   echo 0
 }
 
-# From "cluster-1" → "k3d-cluster-1"
+# From "cluster-1" → "k3d-cluster-1" 
 normalize_to_ctx() {
   local raw="$1"
   local cname
@@ -288,31 +288,45 @@ mapfile -t EXISTING_CLUSTERS < <(echo "$existing_json" | jq -r '.[].name')
 
 for raw in "${ORDERED_CLUSTERS[@]}"; do
   cname="$(normalize_cluster_name "$raw")"  # e.g., "cluster-1"
-  # Check if it already exists
+
   if printf '%s\n' "${EXISTING_CLUSTERS[@]}" | grep -qx "$cname"; then
     echo "   ✅ Cluster '$cname' already exists, skipping creation"
     continue
   fi
 
-  # Calculate external ports based on the cluster number
   offset="$(cluster_port_offset "$cname")"
   p1=$((30085 + offset))
   p2=$((30065 + offset))
   p3=$((30099 + offset))
 
-  echo "   ➕ Creating k3d cluster '$cname' (ports: $p1:$p1, $p2:$p2, $p3:$p3)..."
+  # Base ports
+  PORT_ARGS=(
+    -p "${p1}:${p1}@server:0"
+    -p "${p2}:${p2}@server:0"
+    -p "${p3}:${p3}@server:0"
+  )
+
+  # Port only for cluster-27 (testing purposes)
+  if [[ "$cname" == "cluster-27" ]]; then
+    PORT_ARGS+=(
+      -p "32684:32684@server:0"
+      -p "32698:32698@server:0"
+      -p "32664:32664@server:0"
+    )
+  fi
+
+  echo "   ➕ Creating k3d cluster '$cname' (ports: ${PORT_ARGS[*]})..."
+
   k3d cluster create "$cname" \
     --image rancher/k3s:v1.29.4-k3s1 \
-    -p "${p1}:${p1}@server:0" \
-    -p "${p2}:${p2}@server:0" \
-    -p "${p3}:${p3}@server:0" \
+    "${PORT_ARGS[@]}" \
     --agents 1 \
     --k3s-arg "--flannel-iface=eth0"@server:0 \
     --network mc-net
 
-  # Update the list of existing clusters in memory
   EXISTING_CLUSTERS+=("$cname")
 done
+
 echo
 
 # --- Creation (only once) of the cluster-db ---
@@ -422,8 +436,8 @@ echo
 
 # --- Preparing DB data: IP and secret ---
 echo "🔗 Retrieving DB IP (container k3d-cluster-db-server-0 on mc-net)..."
-DB_IP="$(docker inspect k3d-cluster-db-server-0 2>/dev/null \
-  | jq -r '.[0].NetworkSettings.Networks["mc-net"].IPAddress')"
+DB_IP="$(docker inspect k3d-cluster-db-server-0 2>/dev/null | jq -r '.[0].NetworkSettings.Networks["mc-net"].IPAddress')"
+
 if [[ -z "$DB_IP" ]]; then
   echo "❌ Unable to determine DB IP on mc-net. Verify that the container 'k3d-cluster-db-server-0' exists and is on the 'mc-net' network." >&2
   exit 1

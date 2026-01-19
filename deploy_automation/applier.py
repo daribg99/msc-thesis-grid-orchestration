@@ -24,20 +24,21 @@ def run_cmd(cmd):
         raise subprocess.CalledProcessError(result.returncode, cmd, output=result.stdout, stderr=result.stderr)
 
 
-def get_openpdc_port(cluster):
-    """
-    Placeholder: qui puoi inserire una vera tabella porte.
-    """
-    return 30000 + abs(hash(cluster)) % 1000
-
 def get_pdc_pod(cluster):
-    context=cluster_to_context(cluster)
+    context = cluster_to_context(cluster)
     cmd = f"kubectl --context {context} get pods -n lower -o jsonpath='{{.items[*].metadata.name}}'"
     out = subprocess.check_output(cmd, shell=True).decode().split()
-    pods = [p for p in out if "openpdc" in p]
+
+    pods = [
+        p for p in out
+        if "openpdc" in p and not p.startswith("openpdc-test-")
+    ]
+
     if not pods:
         raise RuntimeError(f"No openpdc pod found in {cluster}")
+
     return pods[0]
+
 
 
 def get_node_ip(cluster):

@@ -25,7 +25,7 @@ DEPLOYER_SH  = DEPLOY_DIR / "deployer.sh"
 APPLIER_PY   = DEPLOY_DIR / "applier.py"
 
 DEBUG_SKIP_DEPLOY = False  # Set to True to skip deployer/applier for debugging
-DELAY_SKIP = False # Set to True to skip delay application for testing
+DELAY_SKIP = True # Set to True to skip delay application for testing
 
 # ================== Utility Functions ==================
 

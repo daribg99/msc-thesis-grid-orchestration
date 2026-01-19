@@ -1,19 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: openpdc
+  name: openpdc-test
   labels:
-    app: openpdc
+    app: openpdc-test
 spec:
   selector:
     matchLabels:
-      app: openpdc
+      app: openpdc-test
   strategy:
     type: Recreate
   template:
     metadata:
       labels:
-        app: openpdc
+        app: openpdc-test
     spec:
       initContainers:
       - name: openpdc-init
@@ -73,13 +73,13 @@ spec:
     - name: console
       port: 8500
       targetPort: 8500
-      nodePort: 32685
+      nodePort: 32684
     - name: outputstream
       port: 4712
-      nodePort: 32699
+      nodePort: 32698
     - name: datapublisher
       port: 6165
       targetPort: 6165
-      nodePort: 32665
+      nodePort: 32664
   selector:
-    app: openpdc
+    app: openpdc-test
