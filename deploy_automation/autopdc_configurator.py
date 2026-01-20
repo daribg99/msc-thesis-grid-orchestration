@@ -59,34 +59,10 @@ def format_hms(seconds):
 
 def write_runtime(label, seconds):
     formatted = format_hms(seconds)
-    with open(RUNTIME_FILE, "a") as f:
+    with open(RUNTIME_FILE, "a") as f:w
         f.write(f"{label:<20} {formatted}\n")
 
-def normalize_paths(path_dict):
-    cluster_ids = set()
-    for pmu_info in path_dict.values():
-        for node in pmu_info["path"]:
-            if node.startswith("N"):
-                cluster_ids.add(int(node[1:]))
 
-    cc_cluster_id = 27 #  limited to 27 clusters by NodePort range and 100-port offset
-
-
-    def normalize_node(node):
-        if node.startswith("PMU"):
-            return f"PMU-{node[3:]}"
-        elif node.startswith("N"):
-            return f"cluster{node[1:]}"
-        elif node == "CC":
-            return f"cluster{cc_cluster_id}"
-        else:
-            return node
-
-    # Costruisce SOLO la lista dei paths normalizzati
-    return [
-        [normalize_node(n) for n in pmu_info["path"]]
-        for pmu_info in path_dict.values()
-    ]
 
 # ================== Placement Logic ==================
 
@@ -166,19 +142,17 @@ def main():
         total_start = time.perf_counter()
 
         pdcs, path, max_latency = choose_algorithm(G)
-        print("✅ PDCs assigned in clusters:", pdcs)
+        print(f"✅ PDCs assigned in clusters: {', '.join(pdcs)}, CC")
         # Draw updated graph
         draw_graph(G, pdcs=pdcs, paths=path, max_latency=max_latency)
         # Save result to output.json (to feed deployer/applier)
         import json
-        paths_list = normalize_paths(path)
 
         with open(OUTPUT_JSON, "w") as f:
             json.dump(
                 {
                     "path": path,                     
-                    "paths": paths_list,               
-                    "pdcs": sorted(list(pdcs)),
+                    "pdcs": sorted(list(pdcs)) + ["CC"],
                     "max_latency": max_latency
                 },
                 f,
