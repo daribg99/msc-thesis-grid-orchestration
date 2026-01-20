@@ -111,19 +111,49 @@ def wait_for_pdc_ready(cluster, timeout=7200):
 
         time.sleep(2)
 
+def to_cluster_name(node: str, cc_cluster_id: int = 27) -> str:
+    # N4 -> cluster4, CC -> cluster27
+    if node == "CC":
+        return f"cluster{cc_cluster_id}"
+    if node.startswith("N") and node[1:].isdigit():
+        return f"cluster{int(node[1:])}"
+    return node  # fallback
+
+
+def to_pmu_name(pmu: str) -> str:
+    # PMU1 -> PMU-1
+    if pmu.startswith("PMU") and pmu[3:].isdigit():
+        return f"PMU-{int(pmu[3:])}"
+    return pmu  # fallback
+
+
+def extract_paths_from_new_json(paths_json, cc_cluster_id: int = 27):
+    
+    paths = []
+
+    for pmu, info in paths_json["path"].items():
+        node_path = info["path"]
+
+        pmu_old = to_pmu_name(node_path[0])
+        clusters_old = [to_cluster_name(x, cc_cluster_id) for x in node_path[1:]]
+
+        paths.append([pmu_old] + clusters_old)
+
+    return paths
 
 # --------------------------------------------------------
 #   Construction of PDC configuration from paths
 # --------------------------------------------------------
 
 def build_pdc_topology(paths_json):
-    paths = paths_json["paths"]
+    
+    paths = extract_paths_from_new_json(paths_json)
     config = {}
-
+    
     # Initialization
     for path in paths:
         pmu = path[0]
-        clusters = path[1:]
+        clusters = path[1:]  
 
         for c in clusters:
             if c not in config:
@@ -163,10 +193,10 @@ def build_pdc_topology(paths_json):
                     "pmus": [pmu],
                     "port": calc_port(child)
                 })
-    def pmu_sort_key(pmu_name):
-        return int(pmu_name.split('-')[-1])
 
-    # sets → sorted lists
+    def pmu_sort_key(pmu_name: str) -> int:
+        return int(pmu_name.split("-")[-1])
+
     for c in config:
         config[c]["outputstream"] = sorted(
             config[c]["outputstream"],
@@ -176,18 +206,21 @@ def build_pdc_topology(paths_json):
     return config
 
 
+
 # --------------------------------------------------------
 #   Construction of dependencies (ordering)
 # --------------------------------------------------------
 
+from collections import defaultdict, deque
+
 def compute_order(paths_json):
-    paths = paths_json["paths"]
+    paths = extract_paths_from_new_json(paths_json)
 
     deps = defaultdict(set)
     all_clusters = set()
 
     for path in paths:
-        nodes = path[1:]
+        nodes = path[1:]  
 
         for n in nodes:
             all_clusters.add(n)
@@ -198,14 +231,11 @@ def compute_order(paths_json):
             deps[parent].add(child)
 
     for c in all_clusters:
-        if c not in deps:
-            deps[c] = set()
+        deps.setdefault(c, set())
 
     in_degree = {c: 0 for c in all_clusters}
-
     for parent, children in deps.items():
-        for child in children:
-            in_degree[parent] += 1
+        in_degree[parent] = len(children)
 
     queue = deque([c for c in all_clusters if in_degree[c] == 0])
     order = []
@@ -223,6 +253,7 @@ def compute_order(paths_json):
 
     return order
 
+
 # --------------------------------------------------------
 #   EXECUTE EVERYTHING 
 # --------------------------------------------------------
@@ -236,8 +267,7 @@ def execute_all(order, config):
         if result.returncode != 0:
             print(f"\n❌ ERROR: Kubernetes context '{context}' does not exist.\n"
                   f"   This means the cluster '{cluster}' is referenced in the PATHS JSON \n"
-                  f"   but does not exist in your system.\n"
-                  f"   Aborting MISSILE MODE to avoid half-applied configuration.\n")
+                  f"   but does not exist in your system.\n")
             sys.exit(1)
         
         wait_for_pdc_ready(cluster)

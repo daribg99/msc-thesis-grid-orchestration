@@ -659,10 +659,17 @@ if [ ! -d "$PMU_DIR" ]; then
   exit 1
 fi
 
-# Extract pairs (PMU-X → clusterY)
+# Extract pairs (PMU-X → clusterY) from .path (PMU -> first hop)
 readarray -t PMU_MAP < <(
-  jq -r '.paths[] | "\(.[0]) \(.[1])"' "$JSON"
+  jq -r '
+    .path
+    | to_entries[]
+    | .value.path as $p
+    | "\($p[0]) \($p[1])"
+  ' "$JSON" \
+  | sed -E 's/^PMU([0-9]+)/PMU-\1/; s/ N([0-9]+)/ cluster\1/; s/ CC$/ cluster27/'
 )
+
 for entry in "${PMU_MAP[@]}"; do
   pmu_name="$(echo "$entry" | awk '{print $1}')"     # es: PMU-1
   raw_cluster="$(echo "$entry" | awk '{print $2}')"  # es: cluster1

@@ -27,6 +27,6 @@ Run ConfigurationSetupUtility and use the following credential:
 Before running the utility, go into Advanced and modify the Data Provider connection string with your version of MSQL connector. 
 Finally, if you want to make quick setup, you can create historian directly with CLI by running:
 ```bash
-./deploy_automation/openpdc_cli.sh createhistorian --db-context k3d-cluster-db --openpdc-context k3d-cluster-27 --db-ns db --pdc-ns lower --db clustertest --pod <openpdc-pod-name>>
+./deploy_automation/openpdc_cli.sh createhistorian --db-context k3d-cluster-db --openpdc-context k3d-cluster-27 --db-ns db --pdc-ns lower --db clustertest --pod <openpdc-pod-name>
 ```
 Now you can use OpenPDC Manager to connect to the downstreams. 

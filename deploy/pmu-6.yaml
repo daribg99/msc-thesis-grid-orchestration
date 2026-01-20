@@ -1,24 +1,24 @@
 apiVersion: v1
+binaryData:
+  pmu.bin: MTUwMDAKNDcxMgpDRkcgMSAxMzQKqjEAhgAGaW9y5ADTiggA////AAFwbXUtNiAgICAgICAgICAgAAYADgADAAEAAFZfQSAgICAgICAgICAgICBWX0IgICAgICAgICAgICAgVl9DICAgICAgICAgICAgIFAgICAgICAgICAgICAgICAAAAABAAAAAQAAAAECAAABAAEAAAAZy3YK
 kind: ConfigMap
 metadata:
-  name: pmu-4
-binaryData:
-  pmu.bin: MTUwMDAKNDcxMgpDRkcgMSAxMzQKqjEAhgABYOb4aQCtpbgA////AAFwbXUtMSAgICAgICAgICAgAAEAAAADAAEAAEEgICAgICAgICAgICAgICBCICAgICAgICAgICAgICAgQyAgICAgICAgICAgICAgIEUgICAgICAgICAgICAgICAABR9NAAUfTQAFH00BAAFPAAEAAAAZ83QK
+  name: pmu-6
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: pmu-4
+  name: pmu-6
 spec:
   selector:
     matchLabels:
-      app: pmu-4
+      app: pmu-6
   strategy:
     type: Recreate
   template:
     metadata:
       labels:
-        app: pmu-4
+        app: pmu-6
     spec:
       containers:
       - name: pmu
@@ -30,7 +30,7 @@ spec:
         - name: TERM
           value: xterm
         volumeMounts:
-        - name: pmu-4
+        - name: pmu-6
           mountPath: /pmu.bin
           subPath: pmu.bin
         livenessProbe:
@@ -38,22 +38,23 @@ spec:
             port: 4712
           initialDelaySeconds: 15
           periodSeconds: 20
+
       volumes:
-      - name: pmu-4
-        configMap:
-          name: pmu-4
+        - name: pmu-6
+          configMap:
+            name: pmu-6
       restartPolicy: Always
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: pmu-4
+  name: pmu-6
   labels:
-    name: pmu-4
+    name: pmu-6
 spec:
-  type: NodePort
-  ports:
-  - port: 4712
-    targetPort: 4712
   selector:
-    app: pmu-4
+    app: pmu-6
+  ports:
+    - protocol: TCP
+      port: 4712
+      targetPort: 4712

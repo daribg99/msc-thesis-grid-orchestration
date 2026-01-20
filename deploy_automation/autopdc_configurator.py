@@ -4,12 +4,22 @@ import sys
 import signal
 import os
 import time
+import json
 
 from modelling_algorithms.modules.graph_model import create_graph, modify_latency, modify_edge_status, modify_bandwidth
 from modelling_algorithms.modules.visualizer import draw_graph
 from modelling_algorithms.modules.placement_pdc import place_pdcs_greedy, place_pdcs_random, place_pdcs_bruteforce, q_learning_placement
 from modelling_algorithms.modules.gnn import train_with_policy_gradient
 from test_functions.delay_applicator import apply_delay
+from test_functions.snapshot import save_snapshot
+from test_functions.metrics import (
+    pdcs_set,
+    churn,
+    jaccard_distance,
+    append_metrics_csv
+)
+from test_functions.plotting import plot_topology_metrics
+
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent          # .../TESI/deploy_automation
@@ -17,8 +27,9 @@ REPO_ROOT  = SCRIPT_DIR.parent                        # .../TESI
 
 DEPLOY_DIR   = REPO_ROOT / "deploy_automation"
 RUNTIME_DIR  = REPO_ROOT / "runtime_results"
-
-RUNTIME_FILE = str(RUNTIME_DIR / "runtime.log")
+SNAPSHOTS_DIR = RUNTIME_DIR / "snapshots"
+METRICS_CSV   = RUNTIME_DIR / "topology_change.csv"
+RUNTIME_FILE = str(RUNTIME_DIR / "runtime.csv")
 OUTPUT_JSON  = str(RUNTIME_DIR / "output.json")
 
 DEPLOYER_SH  = DEPLOY_DIR / "deployer.sh"
@@ -59,8 +70,9 @@ def format_hms(seconds):
 
 def write_runtime(label, seconds):
     formatted = format_hms(seconds)
-    with open(RUNTIME_FILE, "a") as f:w
+    with open(RUNTIME_FILE, "a") as f:
         f.write(f"{label:<20} {formatted}\n")
+
 
 
 
@@ -120,17 +132,30 @@ def choose_algorithm(G):
 def main():
 
     os.makedirs(RUNTIME_DIR, exist_ok=True)
+    os.makedirs(SNAPSHOTS_DIR, exist_ok=True)
+
+    # --- reset runtime results (fresh experiment) ---
+    if SNAPSHOTS_DIR.exists():
+        for f in SNAPSHOTS_DIR.glob("*.json"):
+            f.unlink()
+
+    if os.path.exists(METRICS_CSV):
+        os.remove(METRICS_CSV)
+
+    # --- topology monitoring state ---
+    iteration = 0
+    prev_pdcs = None
 
     if DEBUG_SKIP_DEPLOY:
         print("🧪 DEBUG MODE: deployer/applier will be skipped.")
-        
+
     with open(RUNTIME_FILE, "w") as f:
         f.write("=== Runtime summary ===\n")
 
     print("🌐 Creating initial graph...\n")
     G = create_graph(seed=None, p_extra=0.45)
     draw_graph(G)
-        
+
     while True:
         print("\n🔄 Updating network conditions...")
         modify_latency(G)
@@ -143,23 +168,49 @@ def main():
 
         pdcs, path, max_latency = choose_algorithm(G)
         print(f"✅ PDCs assigned in clusters: {', '.join(pdcs)}, CC")
+
         # Draw updated graph
         draw_graph(G, pdcs=pdcs, paths=path, max_latency=max_latency)
-        # Save result to output.json (to feed deployer/applier)
-        import json
 
+        # Build output dict once
+        data = {
+            "path": path,
+            "pdcs": sorted(list(pdcs)) + ["CC"],
+            "max_latency": max_latency
+        }
+
+        # Save result to output.json (to feed deployer/applier)
         with open(OUTPUT_JSON, "w") as f:
-            json.dump(
-                {
-                    "path": path,                     
-                    "pdcs": sorted(list(pdcs)) + ["CC"],
-                    "max_latency": max_latency
-                },
-                f,
-                indent=4
-            )
+            json.dump(data, f, indent=4)
 
         print(f"💾 Results saved to {OUTPUT_JSON}")
+
+        # --- Save snapshot for this iteration ---
+        snap_path = save_snapshot(iteration, data, SNAPSHOTS_DIR)
+        print(f"🧾 Snapshot saved to {snap_path}")
+
+        # --- Compute topology-change metrics (PDC set) ---
+        curr_pdcs = pdcs_set(data, exclude_cc=True)
+
+        if prev_pdcs is not None:
+            c = churn(prev_pdcs, curr_pdcs)
+            jd = jaccard_distance(prev_pdcs, curr_pdcs)
+            added = len(curr_pdcs - prev_pdcs)
+            removed = len(prev_pdcs - curr_pdcs)
+
+            append_metrics_csv(
+                METRICS_CSV,
+                iteration,
+                c,
+                jd,
+                added,
+                removed
+            )
+
+            print(f"📈 Change metric @T={iteration}: churn={c:.3f}, (1-Jaccard)={jd:.3f} | +{added} -{removed}")
+
+        prev_pdcs = curr_pdcs
+        iteration += 1
 
         # --- Run deployer and applier ---
         if not DEBUG_SKIP_DEPLOY:
@@ -198,7 +249,11 @@ def main():
         cont = input("\n🔁 Repeat the process? (y/n): ").lower()
         if cont != 'y':
             print("👋 Exiting loop.")
+            # Optional: plot at the end (comment out if running headless)
+            # if os.path.exists(METRICS_CSV):
+            #     plot_topology_metrics(METRICS_CSV)
             break
+
 
 
 if __name__ == "__main__":
