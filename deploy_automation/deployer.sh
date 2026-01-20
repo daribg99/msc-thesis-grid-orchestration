@@ -262,21 +262,26 @@ wait_for_all_workloads_ready() {
 
 
 # --- Extraction of clusters (PDC) from JSON ---
-echo "🔎 Extracting PDC (clusters) from JSON..."
+echo "🔎 Extracting PDC (clusters) from JSON (from .path, N* → cluster*)..."
 readarray -t ORDERED_CLUSTERS < <(
-  jq -r '.paths[] | .[1:][]' "$JSON" | awk '!seen[$0]++'
+  jq -r '.path | to_entries[] | .value.path[1:][] | select(. != "CC")' "$JSON" \
+  | sed -E 's/^N([0-9]+)/cluster\1/' \
+  | awk '!seen[$0]++'
 )
 
+# cluster27 as CC
+ORDERED_CLUSTERS+=("cluster27")
+
 if [ "${#ORDERED_CLUSTERS[@]}" -eq 0 ]; then
-  echo "⚠️  No clusters found in JSON under 'paths' (after skipping PMU)." >&2
-  echo "👉 Example: {\"paths\":[[\"PMU-1\",\"cluster1\",...],[\"PMU-2\",\"cluster4\",...]]}"
-  echo "🔎 Debug dump of .paths:"
-  jq '.paths' "$JSON" || true
+  echo "⚠️  No clusters found in JSON under 'path.*.path' (after skipping PMU)." >&2
+  echo "🔎 Debug dump of .path:"
+  jq '.path' "$JSON" || true
   exit 1
 fi
 
 echo "🗺️  Computed PDC/cluster list (from JSON, no duplicates): ${ORDERED_CLUSTERS[*]}"
 echo
+
 
 # --- Creation of k3d clusters for each PDC (if they don't exist) ---
 
