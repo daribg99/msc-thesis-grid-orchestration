@@ -26,6 +26,9 @@ def create_graph(
     for p in pmus:
         G.add_node(p, role="PMU", data_rate=100, status="online")
 
+    #only for PMU8
+    G.add_node("PMU8", role="PMU", data_rate=100, status="online")
+
     # helper per aggiungere archi con attributi
     def add_edge(u, v):
         if u == v or G.has_edge(u, v):
@@ -33,7 +36,7 @@ def create_graph(
         G.add_edge(
             u, v,
             latency=round(random.uniform(2, 9), 2),
-            bandwidth=200,
+            bandwidth=400,
             status="up"
         )
 
@@ -67,6 +70,9 @@ def create_graph(
     for p in pmus:
         for n in random.sample(candidates, pmu_links):
             add_edge(p, n)
+    #only for PMU8
+    for n in random.sample(candidates, pmu_links):
+        add_edge("PMU8", n)
 
     return G
 

@@ -18,7 +18,7 @@ from test_functions.metrics import (
     jaccard_distance,
     append_metrics_csv
 )
-from test_functions.plotting import plot_topology_metrics
+from test_functions.plotting import plot_pdc_topology_jaccard, plot_runtime_histogram
 
 from pathlib import Path
 
@@ -35,7 +35,7 @@ OUTPUT_JSON  = str(RUNTIME_DIR / "output.json")
 DEPLOYER_SH  = DEPLOY_DIR / "deployer.sh"
 APPLIER_PY   = DEPLOY_DIR / "applier.py"
 
-DEBUG_SKIP_DEPLOY = False  # Set to True to skip deployer/applier for debugging
+DEBUG_SKIP_DEPLOY = True  # Set to True to skip deployer/applier for debugging
 DELAY_SKIP = True # Set to True to skip delay application for testing
 
 # ================== Utility Functions ==================
@@ -247,12 +247,22 @@ def main():
 
         # Ask if user wants to continue
         cont = input("\n🔁 Repeat the process? (y/n): ").lower()
+        
         if cont != 'y':
             print("👋 Exiting loop.")
-            # Optional: plot at the end (comment out if running headless)
-            # if os.path.exists(METRICS_CSV):
-            #     plot_topology_metrics(METRICS_CSV)
+
+            if os.path.exists(METRICS_CSV):
+                plot_pdc_topology_jaccard(
+                    Path(METRICS_CSV),
+                    output_dir=RUNTIME_DIR
+                )
+            if os.path.exists(RUNTIME_FILE):
+                plot_runtime_histogram(
+                    Path(RUNTIME_FILE),
+                    output_dir=RUNTIME_DIR
+                )
             break
+
 
 
 
