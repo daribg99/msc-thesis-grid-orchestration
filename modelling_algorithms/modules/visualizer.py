@@ -1,12 +1,29 @@
-import matplotlib 
+import matplotlib
 import matplotlib.pyplot as plt
 import networkx as nx
 from matplotlib.patches import Patch
-import os
+from pathlib import Path
 
-def draw_graph(G, pdcs=None, paths=None, max_latency=None):
+
+def draw_graph(G, pdcs=None, paths=None, max_latency=None, output_path: Path | None = None):
+    """
+    Draw the graph and optionally highlight assigned PDCs and PMU->CC paths.
+
+    If output_path is provided, the figure is saved there (versionable per-iteration).
+    Otherwise it is saved to runtime_results/graph.png.
+    """
+
     if pdcs is None:
         pdcs = set()
+
+    # Decide output path
+    if output_path is None:
+        output_path = Path("runtime_results") / "graph.png"
+    else:
+        output_path = Path(output_path)
+
+    # Ensure parent folder exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     plt.figure(figsize=(14, 10))
 
@@ -45,52 +62,66 @@ def draw_graph(G, pdcs=None, paths=None, max_latency=None):
         node_labels[n] = label
         node_edgecolors.append(edge_color)
 
-    nx.draw_networkx_nodes(G, pos,
-                           node_color=node_colors,
-                           edgecolors=node_edgecolors,
-                           node_size=1100,
-                           linewidths=1.8)
+    nx.draw_networkx_nodes(
+        G,
+        pos,
+        node_color=node_colors,
+        edgecolors=node_edgecolors,
+        node_size=1100,
+        linewidths=1.8,
+    )
 
-    # Disegna tutti gli archi base in grigio
+    # Draw all base edges in light gray
     nx.draw_networkx_edges(G, pos, width=1.2, edge_color="lightgray")
     nx.draw_networkx_labels(G, pos, labels=node_labels, font_size=8)
     nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=7, label_pos=0.5)
 
-    # Colori diversi per ogni path PMU → CC
+    # Highlight each PMU -> CC path with a different color
     if paths:
         colors = [
             "crimson", "darkgreen", "royalblue", "goldenrod",
             "purple", "darkorange", "deeppink", "teal", "brown"
         ]
-        color_map = {}
 
         for i, (pmu, data) in enumerate(paths.items()):
             path = data["path"]
-            delay = data["delay"]
             color = colors[i % len(colors)]
-            color_map[pmu] = color
             edges = list(zip(path, path[1:]))
 
-            nx.draw_networkx_edges(G, pos,
-                                   edgelist=edges,
-                                   width=2.8,
-                                   edge_color=color)
+            nx.draw_networkx_edges(
+                G,
+                pos,
+                edgelist=edges,
+                width=2.8,
+                edge_color=color,
+            )
 
-        # Testo con le latenze
+        # Text box with PMU -> CC delays
         all_pmus = [n for n in G.nodes if G.nodes[n].get("role") == "PMU"]
         text = "Latency PMU → CC:\n"
-        text += f"Max required latency: {max_latency:.2f} ms\n"
+        if max_latency is not None:
+            text += f"Max required latency: {float(max_latency):.2f} ms\n"
+        else:
+            text += "Max required latency: N/A\n"
+
         for pmu in all_pmus:
-            if paths and pmu in paths:
-                delay = paths[pmu]["delay"]
-                text += f"{pmu} → CC: {delay:.2f} ms ✔️\n"
+            if pmu in paths:
+                delay = paths[pmu].get("delay", None)
+                if delay is not None:
+                    text += f"{pmu} → CC: {float(delay):.2f} ms ✔️\n"
+                else:
+                    text += f"{pmu} → CC: delay N/A\n"
             else:
                 text += f"{pmu} → CC: no path available ✗\n"
 
-        plt.gcf().text(0.05, 0.85, text, fontsize=9, verticalalignment='top',
-                       bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.5'))
+        plt.gcf().text(
+            0.05, 0.85, text,
+            fontsize=9,
+            verticalalignment="top",
+            bbox=dict(facecolor="white", edgecolor="black", boxstyle="round,pad=0.5"),
+        )
 
-    # Legenda
+    # Legend
     legend_elements = [
         Patch(facecolor="red", edgecolor="black", label="CC"),
         Patch(facecolor="lightgreen", edgecolor="black", label="PMU"),
@@ -102,22 +133,21 @@ def draw_graph(G, pdcs=None, paths=None, max_latency=None):
     plt.title("Graph with role and selected path", fontsize=12)
     plt.axis("off")
     plt.tight_layout()
-    
-    os.makedirs("runtime_results", exist_ok=True)
 
-    plt.savefig("runtime_results/graph.png", dpi=300, bbox_inches="tight")
+    # Save to the requested output_path (versionable)
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
 
     backend = matplotlib.get_backend().lower()
-
     if backend not in {"agg", "pdf", "ps", "svg"}:
         plt.show(block=False)
     else:
         print(
             f"ℹ️  Matplotlib backend '{backend}' is non-interactive.\n"
-            "   Graph saved to \"runtime_results\" folder only."
+            f"   Graph saved to \"{output_path}\"."
         )
 
     plt.close()
+
 
 
 
