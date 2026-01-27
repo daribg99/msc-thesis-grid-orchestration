@@ -79,16 +79,30 @@ def _parse_time_to_ms(s: str) -> float | None:
     return None
 
 def plot_runtime_stacked_per_iteration(runtime_csv: Path, output_dir: Path | None = None):
-   
+    # Ordine fisso per le 3 colonne per ogni T
+    alg_order = ["Greedy", "Bruteforce", "Random"]
 
-    placement_ms = []
-    deployer_ms  = []
-    applier_ms   = []
+    # Regex: Placement-ALGO <time>
+    placement_re = re.compile(r".*\bPlacement-(Greedy|Bruteforce|Random)\b\s+(.+)$", re.IGNORECASE)
+    deployer_re  = re.compile(r".*\bDeployer\b\s+(.+)$", re.IGNORECASE)
+    applier_re   = re.compile(r".*\bApplier\b\s+(.+)$", re.IGNORECASE)
 
-    # Regex robusti (trovano la label ovunque nella riga, anche se ci sono char strani prima)
-    placement_re = re.compile(r".*\bPlacement\b.*?\s+(.+)$")
-    deployer_re  = re.compile(r".*\bDeployer\b\s+(.+)$")
-    applier_re   = re.compile(r".*\bApplier\b\s+(.+)$")
+    # raccoglie record completi: (algo, placement_ms, deployer_ms, applier_ms)
+    records: list[tuple[str, float, float, float]] = []
+
+    cur_algo = None
+    cur_place = None
+    cur_dep = None
+    cur_app = None
+
+    def _flush_if_complete():
+        nonlocal cur_algo, cur_place, cur_dep, cur_app
+        if cur_algo is not None and cur_place is not None and cur_dep is not None and cur_app is not None:
+            records.append((cur_algo, cur_place, cur_dep, cur_app))
+            cur_algo = None
+            cur_place = None
+            cur_dep = None
+            cur_app = None
 
     with open(runtime_csv, "r") as f:
         for raw in f:
@@ -102,54 +116,131 @@ def plot_runtime_stacked_per_iteration(runtime_csv: Path, output_dir: Path | Non
 
             m = placement_re.match(line)
             if m:
-                ms = _parse_time_to_ms(m.group(1))
-                if ms is not None:
-                    placement_ms.append(ms)
+                # se per qualche motivo era rimasto un blocco incompleto, lo scartiamo e ripartiamo
+                cur_algo = m.group(1).capitalize()
+                cur_place = _parse_time_to_ms(m.group(2))
+                cur_dep = None
+                cur_app = None
                 continue
 
             m = deployer_re.match(line)
-            if m:
-                ms = _parse_time_to_ms(m.group(1))
-                if ms is not None:
-                    deployer_ms.append(ms)
+            if m and cur_algo is not None:
+                cur_dep = _parse_time_to_ms(m.group(1))
                 continue
 
             m = applier_re.match(line)
-            if m:
-                ms = _parse_time_to_ms(m.group(1))
-                if ms is not None:
-                    applier_ms.append(ms)
+            if m and cur_algo is not None:
+                cur_app = _parse_time_to_ms(m.group(1))
+                _flush_if_complete()
                 continue
 
-    n = min(len(placement_ms), len(deployer_ms), len(applier_ms))
-    if n == 0:
-        print("⚠️ No runtime data to plot (placement/deployer/applier not parsed).")
-        print(f"DEBUG placement parsed: {len(placement_ms)}")
-        print(f"DEBUG deployer parsed:  {len(deployer_ms)}")
-        print(f"DEBUG applier parsed:   {len(applier_ms)}")
+            # ignora Total Iteration e qualsiasi altra riga
+
+    if not records:
+        print("⚠️ No runtime data to plot (no complete algo blocks parsed).")
         print(f"DEBUG file: {runtime_csv}")
         return
 
-    placement = np.array(placement_ms[:n]) / 1000.0
-    deployer  = np.array(deployer_ms[:n])  / 1000.0
-    applier   = np.array(applier_ms[:n])   / 1000.0
+    # Raggruppa per T: ogni T deve avere 3 record (uno per alg in alg_order)
+    groups = []
+    i = 0
+    while i + 2 < len(records):
+        chunk = records[i:i+3]
+        # verifica che ci siano tutti e 3 gli algoritmi
+        chunk_algos = [a for (a, _, _, _) in chunk]
+        # se l’ordine non è garantito nel file, riordiniamo
+        chunk_map = {a: (p, d, ap) for (a, p, d, ap) in chunk}
+        if all(a in chunk_map for a in alg_order):
+            groups.append([chunk_map[a] for a in alg_order])  # [(p,d,ap) greedy, bruteforce, random]
+            i += 3
+        else:
+            # se il chunk non è “pulito”, prova a scorrere di 1 (fallback robusto)
+            i += 1
 
-    T = np.arange(1, n + 1)
+    nT = len(groups)
+    if nT == 0:
+        print("⚠️ Parsed algo blocks, but could not form any complete T group of 3 algos.")
+        print(f"DEBUG records parsed: {len(records)} -> {records[:5]} ...")
+        return
+
+    # Costruisci matrici shape (nT, 3)
+    placement = np.array([[g[j][0] for j in range(3)] for g in groups], dtype=float) / 1000.0
+    deployer  = np.array([[g[j][1] for j in range(3)] for g in groups], dtype=float) / 1000.0
+    applier   = np.array([[g[j][2] for j in range(3)] for g in groups], dtype=float) / 1000.0
+
+    T = np.arange(1, nT + 1)
+
+    # Posizioni: 3 barre per ogni T
+    width = 0.25
+    offsets = np.array([-width, 0.0, width])
+    x = np.repeat(T, 3) + np.tile(offsets, nT)
+
+    placement_flat = placement.reshape(-1)
+    deployer_flat  = deployer.reshape(-1)
+    applier_flat   = applier.reshape(-1)
 
     plt.figure()
-    plt.bar(T, placement, label="Placement")
-    plt.bar(T, deployer,  bottom=placement, label="Deployer")
-    plt.bar(T, applier,   bottom=placement + deployer, label="Applier")
 
+    # Barre stacked (stesso colore per componente; non separiamo per algoritmo via colore, ma via posizione)
+    plt.bar(x, placement_flat, width=width, label="Placement")
+    plt.bar(x, deployer_flat,  width=width, bottom=placement_flat, label="Deployer")
+    plt.bar(x, applier_flat,   width=width, bottom=placement_flat + deployer_flat, label="Applier")
+
+    # Ticks centrati su ogni T
     plt.xlabel("Topology change index (T)")
     plt.ylabel("Time (s)")
-    plt.xticks(T)
+    plt.xticks(T, [str(t) for t in T])
+
+    # Legenda componenti
+    plt.legend()
+    plt.grid(axis="y")
+
+    width = 0.25
+    offsets = np.array([-width, 0.0, width])
+    x = np.repeat(T, 3) + np.tile(offsets, nT)
+
+    placement_flat = placement.reshape(-1)
+    deployer_flat  = deployer.reshape(-1)
+    applier_flat   = applier.reshape(-1)
+
+    plt.figure()
+
+    # Barre stacked
+    plt.bar(x, placement_flat, width=width, label="Placement")
+    plt.bar(x, deployer_flat,  width=width, bottom=placement_flat, label="Deployer")
+    plt.bar(x, applier_flat,   width=width, bottom=placement_flat + deployer_flat, label="Applier")
+
+    # Tick principali: solo i T (centrati)
+    plt.xlabel("Topology change index (T)")
+    plt.ylabel("Time (s)")
+    plt.xticks(T, [str(t) for t in T])
+
+    # ---- Etichette algoritmo sotto ogni gruppo ----
+    algo_labels = ["G", "B", "R"]  # oppure ["Greedy", "Bruteforce", "Random"]
+
+    for i, t in enumerate(T):
+        base_x = t
+        for j, lbl in enumerate(algo_labels):
+            plt.text(
+                base_x + offsets[j],
+                -0.02 * (placement + deployer + applier).max(),  # leggermente sotto l'asse
+                lbl,
+                ha="center",
+                va="top",
+                fontsize=9,
+                rotation=0
+            )
+
+    # Linea separatrice leggera sotto l'asse
+    plt.axhline(0, linewidth=0.8)
+
+    # Legenda componenti
     plt.legend()
     plt.grid(axis="y")
 
     if output_dir is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
-        out = output_dir / "runtime_stacked_per_iteration.png"
+        out = output_dir / "runtime_stacked_per_iteration_3algos.png"
         plt.savefig(out, dpi=300, bbox_inches="tight")
         print(f"⏱️ Stacked runtime plot saved to {out}")
     else:

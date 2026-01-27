@@ -49,8 +49,8 @@ APPLIER_PY    = DEPLOY_DIR / "applier.py"
 
 # ================== Flags ==================
 
-DEBUG_SKIP_DEPLOY = False   # True: skip deployer/applier
-DELAY_SKIP        = True   # True: skip delay application
+SKIP_DEPLOY = False   # True: skip deployer/applier
+SKIP_DELAY = True   # True: skip delay application
 
 
 # ================== Utility Functions ==================
@@ -167,7 +167,7 @@ def main():
     with open(runtime_file, "w") as f:
         f.write("=== Runtime summary ===\n")
 
-    if DEBUG_SKIP_DEPLOY:
+    if SKIP_DEPLOY:
         print("🧪 DEBUG MODE: deployer/applier will be skipped.")
     print(f"📁 Run directory: {RUN_DIR}")
 
@@ -243,7 +243,7 @@ def main():
         iteration += 1
 
         # --- Run deployer and applier ---
-        if not DEBUG_SKIP_DEPLOY:
+        if not SKIP_DEPLOY:
             steps = [
                 (["bash", str(DEPLOYER_SH), str(output_json)], "Deployer"),
                 (["python3", "-u", str(APPLIER_PY), str(output_json)], "Applier"),
@@ -268,7 +268,7 @@ def main():
         print(f"\n🕒 Total iteration time: {format_hms(total_elapsed)}")
 
         # --- Apply network delays ---
-        if not DELAY_SKIP:
+        if not SKIP_DELAY:
             print("🧪 TESTING MODE: applying delay.")
             apply_delay(G, str(output_json))
         else:
@@ -280,12 +280,13 @@ def main():
             print("👋 Exiting loop.")
 
             # --- Plots for THIS run ---
-            if metrics_csv.exists():
-                plot_pdc_topology_jaccard(metrics_csv, output_dir=plots_dir)
+            if not SKIP_DEPLOY:
+                if metrics_csv.exists():
+                    plot_pdc_topology_jaccard(metrics_csv, output_dir=plots_dir)
 
-            if runtime_file.exists():
-                plot_runtime_stacked_per_iteration(runtime_file, output_dir=plots_dir)
-                plot_total_iteration_boxplot_by_T(RUNS_DIR, output_dir=RUNTIME_ROOT)
+                if runtime_file.exists():
+                    plot_runtime_stacked_per_iteration(runtime_file, output_dir=plots_dir)
+                    plot_total_iteration_boxplot_by_T(RUNS_DIR, output_dir=RUNTIME_ROOT)
 
             break
 

@@ -16,11 +16,11 @@ def create_graph(
     G = nx.Graph()
 
     # --- Nodi ---
-    G.add_node("CC", role="CC", processing=10, status="online")
+    G.add_node("CC", role="CC", processing=21.5, status="online")
 
     candidates = [f"N{i}" for i in range(1, num_candidates + 1)]
     for n in candidates:
-        G.add_node(n, role="candidate", processing=10, status="online")
+        G.add_node(n, role="candidate", processing=21.5, status="online")
 
     pmus = [f"PMU{i}" for i in range(1, num_pmus + 1)]
     for p in pmus:

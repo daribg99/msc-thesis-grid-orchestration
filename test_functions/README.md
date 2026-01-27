@@ -1,6 +1,13 @@
 # TESTING SETUP
 
-#### NOTE: This setup is for testing purposes. This is developed because PDC Manager utility has some problems when PDC are setted up with CLI commands. 
+## RUNNING Topology change tests
+To run topology change tests, run:
+```bash
+python test_functions/batch_runner.py
+```
+This script will run N main run, with T changes for each run, with placement algorithm specified inthe script. See the script for more details and settings.
+
+#### NOTE: This following setup is for testing purposes. It give the possibility to see all PMU phasors arrive at the last PDC. This is developed because PDC Manager utility has some problems when PDC are setted up with CLI commands. 
 
 ## PDC-test setup
 First, go on deploy/openpdc-test.yaml and change the DB ip address to the k3d-cluster-db server IP. We can found it on command printed by main script `python -m deploy_automation.autopdc_configurator` or by running:
