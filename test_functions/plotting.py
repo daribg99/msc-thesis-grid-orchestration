@@ -329,82 +329,206 @@ def plot_runtime_stacked_per_iteration(
 
 
 
-def plot_total_iteration_boxplot_by_T(runs_dir: Path, output_dir: Path | None = None):
-   
+def plot_total_iteration_boxplot_by_T(
+    runs_dir: Path,
+    output_dir: Path | None = None,
+    *,
+    alg_order: list[str] = ["Bruteforce", "Greedy", "Random"],
+    required_T: int | None = None,   # se None: usa il minimo T comune tra le run valide
+):
+    """
+    For each topology-change event index T (0..K-1), build 3 side-by-side boxplots
+    (one per algorithm) of Total Iteration times across runs.
+
+    Runtime file format is per-algorithm blocks:
+        Placement-<Algo>
+        Deployer
+        Applier
+        Total Iteration  <time>
+        ... repeated for T
+        then next algorithm, etc.
+
+    If a run is missing any required Total Iteration block for any algorithm, the whole run is discarded.
+    """
 
     runtime_files = sorted(runs_dir.glob("run_*/runtime.csv"))
     if not runtime_files:
         print(f"⚠️ No runtime.csv files found under {runs_dir}/run_*/")
         return
 
-    total_re = re.compile(r"^\s*Total\s+Iteration\s+(.+?)\s*$")
+    placement_re = re.compile(r"^Placement-(Greedy|Bruteforce|Random)\s+(.+)$", re.IGNORECASE)
+    total_re     = re.compile(r"^Total\s+Iteration\s+(.+?)\s*$", re.IGNORECASE)
 
-    # list of sequences, one per run: [t0_ms, t1_ms, ...]
-    totals_per_run: list[list[float]] = []
+    # Each valid run contributes:
+    #   per_algo_totals[algo] = [t0_ms, t1_ms, ...]
+    valid_runs: list[dict[str, list[float]]] = []
 
     for rf in runtime_files:
-        seq = []
+        per_algo_totals: dict[str, list[float]] = {a: [] for a in alg_order}
+        cur_algo: str | None = None
+
         with open(rf, "r") as f:
             for raw in f:
                 line = raw.strip()
                 if not line or line.startswith("==="):
                     continue
 
-                # normalize weird spaces
                 line = line.replace("\u00a0", " ")
                 line = " ".join(line.split())
 
-                m = total_re.match(line)
+                m = placement_re.match(line)
                 if m:
+                    cur_algo = m.group(1).capitalize()
+                    continue
+
+                m = total_re.match(line)
+                if m and cur_algo is not None:
                     ms = _parse_time_to_ms(m.group(1))
-                    if ms is not None:
-                        seq.append(ms)
+                    if ms is not None and cur_algo in per_algo_totals:
+                        per_algo_totals[cur_algo].append(ms)
 
-        if seq:
-            totals_per_run.append(seq)
+        # --- Validate this run: must have all algos and consistent lengths ---
+        present_algos = [a for a in alg_order if len(per_algo_totals[a]) > 0]
+        if len(present_algos) != len(alg_order):
+            # manca un algoritmo -> scarta run
+            continue
 
-    if not totals_per_run:
-        print("⚠️ No 'Total Iteration' samples found across runs.")
+        lengths = [len(per_algo_totals[a]) for a in alg_order]
+        if len(set(lengths)) != 1:
+            # numero di T diverso tra algoritmi -> scarta run
+            continue
+
+        if lengths[0] == 0:
+            continue
+
+        valid_runs.append(per_algo_totals)
+
+    if not valid_runs:
+        print("⚠️ No valid runs found (missing blocks or inconsistent lengths).")
         return
 
-    # number of T boxes = max length among runs
-    max_T = max(len(seq) for seq in totals_per_run)
+    # Decide K (numero di T da considerare)
+    K_per_run = [len(r[alg_order[0]]) for r in valid_runs]
+    K_common = min(K_per_run)
 
-    # build box data: box_data[t] = list of samples at iteration t across runs
+    if required_T is None:
+        K = K_common
+    else:
+        K = min(required_T, K_common)
+
+    if K <= 0:
+        print("⚠️ No T left to plot after applying required_T/min-common.")
+        return
+
+    # --- Build box data ---
+    # For each T, for each algo -> list of samples across runs (seconds)
     box_data: list[list[float]] = []
-    counts: list[int] = []
+    positions: list[float] = []
 
-    for t in range(max_T):
-        samples_t = [seq[t] for seq in totals_per_run if len(seq) > t]
-        box_data.append([x / 1000.0 for x in samples_t])  # seconds (more readable)
-        counts.append(len(samples_t))
+    # Layout: for each T, 3 boxes centered at T with small offsets
+    nA = len(alg_order)
+    base = np.arange(K)  # 0..K-1
+    width = 0.22 if nA == 3 else min(0.22, 0.8 / max(nA, 1))
+    offsets = (np.arange(nA) - (nA - 1) / 2.0) * width
 
-    # If all empty (shouldn't happen), stop
-    if all(len(b) == 0 for b in box_data):
-        print("⚠️ No per-T samples available to plot.")
-        return
+    for t in range(K):
+        for j, algo in enumerate(alg_order):
+            samples = [run[algo][t] / 1000.0 for run in valid_runs]  # seconds
+            box_data.append(samples)
+            positions.append(base[t] + offsets[j])
 
-    # X labels: T0, T1, ...
-    labels = [f"T{t}" for t in range(max_T)]
+    fig, ax = plt.subplots(figsize=(max(9, K * 1.4), 6))
 
-    plt.figure(figsize=(max(8, max_T * 1.2), 6))
-    plt.boxplot(box_data, tick_labels=labels, showfliers=True)
+    algo_colors = {
+        "Bruteforce": "#1f77b4",  # blu
+        "Greedy":     "#2ca02c",  # verde
+        "Random":     "#d62728",  # rosso
+    }
 
-    plt.xlabel("Topology change index (T)")
-    plt.ylabel("Total iteration time (s)")
-    plt.grid(axis="y")
+    bp = ax.boxplot(
+        box_data,
+        positions=positions,
+        widths=width * 0.9,
+        patch_artist=True,
+        showfliers=True,
+        manage_ticks=False,
+    )
 
-    # Optional: show how many runs contributed to each T
-    # (helps when later T have fewer samples)
-    for i, c in enumerate(counts, start=1):
-        plt.text(i, plt.ylim()[1] * 0.98, f"n={c}", ha="center", va="top", fontsize=8)
+    # Tick principali: T0, T1, ...
+    ax.set_xticks(base)
+    ax.set_xticklabels([f"T{t}" for t in range(K)])
+    ax.set_xlabel("Topology change index (T)")
+    ax.set_ylabel("Total iteration time (s)")
+    ax.grid(axis="y")
+
+    # --- Colora i box per algoritmo ---
+    for i, box in enumerate(bp["boxes"]):
+        algo = alg_order[i % len(alg_order)]   # cicla B,G,R
+        box.set_facecolor(algo_colors[algo])
+        box.set_alpha(0.75)
+        box.set_edgecolor("black")
+
+    # Etichette algoritmo sopra ogni box (dentro figura)
+    # --- Lettere B/G/R sopra ogni box (ancorate ai whisker) ---
+    short = {"Bruteforce": "B", "Greedy": "G", "Random": "R"}
+
+    # ogni box ha 2 whisker: prendiamo quello superiore
+    whiskers = bp["whiskers"]
+
+    box_idx = 0
+    for t in range(K):
+        for j, algo in enumerate(alg_order):
+            # whisker superiore del box corrente
+            w = whiskers[2 * box_idx + 1]
+            y_top = max(w.get_ydata())
+
+            ax.text(
+                positions[box_idx],
+                y_top * 1.03,   # leggermente sopra il box
+                short[algo],
+                ha="center",
+                va="bottom",
+                fontsize=9,
+                color="0.25",
+            )
+
+            box_idx += 1
+
+
+    fig.text(
+        0.5, 0.96,
+        f"n = {len(valid_runs)} runs completed successfully",
+        ha="center",
+        va="top",
+        fontsize=9,
+        color="0.35",
+    )
+
+    from matplotlib.patches import Patch
+
+    algo_legend = [
+        Patch(facecolor="none", edgecolor="none", label="B = Bruteforce"),
+        Patch(facecolor="none", edgecolor="none", label="G = Greedy"),
+        Patch(facecolor="none", edgecolor="none", label="R = Random"),
+    ]
+
+    ax.legend(
+        handles=algo_legend,
+        loc="upper right",
+        frameon=False,
+        fontsize=9,
+    )
+
+
+    fig.subplots_adjust(top=0.88, bottom=0.14)
 
     if output_dir is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
-        out = output_dir / "total_iteration_boxplot_by_T.png"
-        plt.savefig(out, dpi=300, bbox_inches="tight")
-        print(f"📦 Total Iteration boxplot-by-T saved to {out}")
+        out = output_dir / "total_iteration_boxplot_by_T_and_algo.pdf"
+        fig.savefig(out, bbox_inches="tight", pad_inches=0.2)
+        print(f"📦 Total Iteration boxplot-by-T (per algo) saved to {out}")
     else:
         plt.show()
 
-    plt.close()
+    plt.close(fig)
+
