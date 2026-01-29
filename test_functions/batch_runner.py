@@ -27,10 +27,46 @@ BW_MIN, BW_MAX = 50, 1000
 STATUS_CHOICES = ["up", "down"]
 
 # command (module)
-CMD = "python3 -u -m deploy_automation.autopdc_configurator"
+
 
 RUN_DIR_RE = re.compile(r"Run directory:\s*(/.*)", re.IGNORECASE)
 
+def build_cmd(
+    *,
+    skip_deploy=True,
+    skip_delay=True,
+    num_candidates=8,
+    num_pmus=3,
+    seed=None,
+    p_extra=0.35,
+    cc_min_links=2,
+    cc_max_links=None,
+    pmu_links=1,
+):
+    cmd = [
+        "python3", "-u", "-m", "deploy_automation.autopdc_configurator"
+    ]
+
+    if not skip_deploy:
+        cmd.append("--no-skip-deploy")
+    if not skip_delay:
+        cmd.append("--no-skip-delay")
+
+    cmd += [
+        "--num-candidates", str(num_candidates),
+        "--num-pmus", str(num_pmus),
+        "--p-extra", str(p_extra),
+        "--cc-min-links", str(cc_min_links),
+        "--pmu-links", str(pmu_links),
+    ]
+
+    if seed is not None:
+        cmd += ["--seed", str(seed)]
+
+    if cc_max_links is not None:
+        cmd += ["--cc-max-links", str(cc_max_links)]
+
+    return cmd
 
 def latest_snapshot_edges(run_dir: Path) -> List[Tuple[str, str]]:
     snaps_dir = run_dir / "snapshots"
@@ -107,8 +143,29 @@ def cleanup():
     print("🧼 Cleanup completed.\n")
 
 
-def run_one_main_run():
-    child = pexpect.spawn(CMD, encoding="utf-8", timeout=None)
+def run_one_main_run(
+    *,
+    skip_deploy=True,
+    skip_delay=True,
+    num_candidates=8,
+    num_pmus=3,
+    seed=None,
+    p_extra=0.35,
+    pmu_links=1,
+):
+    cmd = build_cmd(
+        skip_deploy=skip_deploy,
+        skip_delay=skip_delay,
+        num_candidates=num_candidates,
+        num_pmus=num_pmus,
+        seed=seed,
+        p_extra=p_extra,
+        pmu_links=pmu_links,
+    )
+
+    print(f"[DEBUG] spawning: {' '.join(cmd)}")
+
+    child = pexpect.spawn(cmd[0], cmd[1:], encoding="utf-8", timeout=None)
     child.logfile_read = sys.stdout
 
     run_dir = None
@@ -262,16 +319,90 @@ def run_one_main_run():
     return child.exitstatus if child.exitstatus is not None else 0
 
 
-def main():
+# ---------------- MODES ----------------
+
+def run_mode_topology_changes(num_runs: int):
     random.seed()
-    for r in range(RUNS):
+
+    for r in range(num_runs):
         print("\n==============================")
-        print(f"🚀 MAIN RUN {r+1}/{RUNS}")
+        print(f"🚀 MAIN RUN {r+1}/{num_runs}")
         print("==============================\n")
-        code = run_one_main_run()
-        print(f"\n✅ MAIN RUN {r+1}/{RUNS} finished with exit code {code}\n")
+
+        code = run_one_main_run(
+            skip_deploy=False,
+            skip_delay=False,
+            num_candidates=8,
+            num_pmus=3,
+            p_extra=0.45,
+            pmu_links=1,
+        )
+
+        print(f"\n✅ MAIN RUN {r+1}/{num_runs} finished with exit code {code}\n")
         cleanup()
         time.sleep(1)
+
+
+
+def run_mode_increasing_nodes(num_runs: int):
+    """Modalità 2: placeholder. Qui implementeremo la logica di aumento nodi topologia."""
+    print("\n🧩 Mode 'increase nodes' selected.")
+    print("➡️ Placeholder: tell me what you want to implement and we'll add it here.\n")
+    # For now, if you want, you could still run the base runs:
+    # run_mode_topology_changes(num_runs)
+    # or do nothing:
+    return
+
+
+def run_mode_custom():
+    """Modalità 3: placeholder for a future mode."""
+    print("\n🧩 Mode 'custom' selected.")
+    return
+
+
+def read_int(prompt: str, default: int) -> int:
+    s = input(prompt).strip()
+    if not s:
+        return default
+    try:
+        v = int(s)
+        return v if v > 0 else default
+    except ValueError:
+        return default
+
+
+def menu():
+    print("\n====================================")
+    print(" AutoPDC Experiment Runner (MENU)")
+    print("====================================")
+    print("1) 5 main run (topology changes)")
+    print("2) 5 main run (increase topology nodes)")
+    print("3) Other mode not implemented yet")
+    print("0) Exit\n")
+
+    choice = input("Select an option (0-3): ").strip()
+    return choice
+
+
+def main():
+    choice = menu()
+
+    if choice == "0":
+        print("👋 Exit.")
+        return
+
+    # default richiesto: 5 main run
+    num_runs = read_int("How many main runs? (default=5): ", default=5)
+
+    if choice == "1":
+        run_mode_topology_changes(num_runs)
+    elif choice == "2":
+        run_mode_increasing_nodes(num_runs)
+    elif choice == "3":
+        run_mode_custom()
+    else:
+        print("❌ Invalid choice.")
+        return
 
 
 if __name__ == "__main__":

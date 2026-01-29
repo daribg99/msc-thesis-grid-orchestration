@@ -46,13 +46,6 @@ RUNS_DIR      = RUNTIME_ROOT / "runs"
 DEPLOYER_SH   = DEPLOY_DIR / "deployer.sh"
 APPLIER_PY    = DEPLOY_DIR / "applier.py"
 
-
-# ================== Flags ==================
-
-SKIP_DEPLOY = True   # True: skip deployer/applier
-SKIP_DELAY = True   # True: skip delay application
-
-
 # ================== Utility Functions ==================
 
 def run_command(cmd, cwd=None):
@@ -144,31 +137,40 @@ def choose_algorithm(G, runtime_file: Path):
 
 # ================== Main Loop ==================
 
-def main():
+def main(
+    *,
+    skip_deploy: bool = True,
+    skip_delay: bool = True,
+    # create_graph params
+    num_candidates: int = 8,
+    num_pmus: int = 3,
+    seed: int | None = None,
+    p_extra: float = 0.45,
+    cc_min_links: int = 2,
+    cc_max_links: int | None = None,
+    pmu_links: int = 1,
+):
     # --- Create a new run directory to keep history across executions ---
     os.makedirs(RUNS_DIR, exist_ok=True)
     run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
     RUN_DIR = RUNS_DIR / run_id
 
-    # Per-run directories
     snapshots_dir = RUN_DIR / "snapshots"
     plots_dir     = RUN_DIR / "plots"
-
-    os.makedirs(RUN_DIR, exist_ok=True)
     os.makedirs(snapshots_dir, exist_ok=True)
     os.makedirs(plots_dir, exist_ok=True)
 
-    # Per-run files
     metrics_csv  = RUN_DIR / "topology_change.csv"
     runtime_file = RUN_DIR / "runtime.csv"
     output_json  = RUN_DIR / "output.json"
 
-    # Fresh runtime log for THIS run only
     with open(runtime_file, "w") as f:
         f.write("=== Runtime summary ===\n")
 
-    if SKIP_DEPLOY:
+    if skip_deploy:
         print("🧪 DEBUG MODE: deployer/applier will be skipped.")
+    if skip_delay:
+        print("🧪 DEBUG MODE: delay application will be skipped.")
     print(f"📁 Run directory: {RUN_DIR}")
 
     # --- topology monitoring state ---
@@ -176,7 +178,15 @@ def main():
     prev_pdcs = None
 
     print("🌐 Creating initial graph...\n")
-    G = create_graph(seed=None, p_extra=0.45)
+    G = create_graph(
+        num_candidates=num_candidates,
+        num_pmus=num_pmus,
+        seed=seed,
+        p_extra=p_extra,
+        cc_min_links=cc_min_links,
+        cc_max_links=cc_max_links,
+        pmu_links=pmu_links,
+    )
     draw_graph(G, output_path=plots_dir / "graph_initial.png")
 
 
@@ -243,7 +253,7 @@ def main():
         iteration += 1
 
         # --- Run deployer and applier ---
-        if not SKIP_DEPLOY:
+        if not skip_deploy:
             steps = [
                 (["bash", str(DEPLOYER_SH), str(output_json)], "Deployer"),
                 (["python3", "-u", str(APPLIER_PY), str(output_json)], "Applier"),
@@ -268,7 +278,7 @@ def main():
         print(f"\n🕒 Total iteration time: {format_hms(total_elapsed)}")
 
         # --- Apply network delays ---
-        if not SKIP_DELAY:
+        if not skip_delay:
             print("🧪 TESTING MODE: applying delay.")
             apply_delay(G, str(output_json))
         else:
@@ -280,7 +290,7 @@ def main():
             print("👋 Exiting loop.")
 
             # --- Plots for THIS run ---
-            if not SKIP_DEPLOY:
+            if not skip_deploy:
                 if metrics_csv.exists():
                     plot_pdc_topology_jaccard(metrics_csv, output_dir=plots_dir)
 
@@ -291,6 +301,36 @@ def main():
             break
 
 
+def parse_args():
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--skip-deploy", action="store_true", default=True)
+    p.add_argument("--no-skip-deploy", dest="skip_deploy", action="store_false")
+    p.add_argument("--skip-delay", action="store_true", default=True)
+    p.add_argument("--no-skip-delay", dest="skip_delay", action="store_false")
+
+    p.add_argument("--num-candidates", type=int, default=8)
+    p.add_argument("--num-pmus", type=int, default=3)
+    p.add_argument("--seed", type=int, default=None)
+    p.add_argument("--p-extra", type=float, default=0.45)
+    p.add_argument("--cc-min-links", type=int, default=2)
+    p.add_argument("--cc-max-links", type=int, default=None)
+    p.add_argument("--pmu-links", type=int, default=1)
+    return p.parse_args()
+
+
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(1))
-    main()
+    args = parse_args()
+
+    main(
+        skip_deploy=args.skip_deploy,
+        skip_delay=args.skip_delay,
+        num_candidates=args.num_candidates,
+        num_pmus=args.num_pmus,
+        seed=args.seed,
+        p_extra=args.p_extra,
+        cc_min_links=args.cc_min_links,
+        cc_max_links=args.cc_max_links,
+        pmu_links=args.pmu_links,
+    )
