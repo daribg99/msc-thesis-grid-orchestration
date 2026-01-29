@@ -49,7 +49,7 @@ APPLIER_PY    = DEPLOY_DIR / "applier.py"
 
 # ================== Flags ==================
 
-SKIP_DEPLOY = False   # True: skip deployer/applier
+SKIP_DEPLOY = True   # True: skip deployer/applier
 SKIP_DELAY = True   # True: skip delay application
 
 
