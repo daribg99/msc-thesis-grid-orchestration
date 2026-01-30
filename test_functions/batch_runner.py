@@ -27,10 +27,10 @@ BW_MIN, BW_MAX = 50, 1000
 STATUS_CHOICES = ["up", "down"]
 
 # ---------------- CONFIG -2 ----------------
-# ---- Mode 2 sweep (fissi, no input) ----
+
 # ---- Mode 2 sweep (FIXED, no input) ----
-MODE2_CANDIDATES_SEQ = [10, 30, 50]
-MODE2_PMUS_SEQ       = [1, 2, 3]   # PMU8 viene aggiunta internamente
+MODE2_CANDIDATES_SEQ = [10, 20, 30, 40]
+MODE2_PMUS_SEQ       = [0,1, 2, 3]   # PMU8 viene aggiunta internamente
 
 MODE2_P_EXTRA = 0.45
 MODE2_CC_MIN_LINKS = 2
@@ -438,7 +438,7 @@ def run_one_size_no_changes(*, num_candidates: int, num_pmus: int):
         skip_delay=True,
         num_candidates=num_candidates,
         num_pmus=num_pmus,
-        p_extra=0.10,
+        p_extra=0.30,
         cc_min_links=2,
         pmu_links=1,
         seed=None,
@@ -531,7 +531,7 @@ def run_mode_topology_changes(num_runs: int):
             skip_delay=False,
             num_candidates=8,
             num_pmus=3,
-            p_extra=0.45,
+            p_extra=0.25,
             pmu_links=1,
         )
 
@@ -541,7 +541,8 @@ def run_mode_topology_changes(num_runs: int):
 
 
 
-def run_mode_increasing_nodes(num_runs: int):
+def run_mode_increasing_nodes():
+    num_runs = 4
     out_dir = Path("increase_nodes_results")
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -648,13 +649,11 @@ def main():
         print("👋 Exit.")
         return
 
-    # default richiesto: 5 main run
-    num_runs = read_int("How many main runs? (default=5): ", default=5)
-
     if choice == "1":
+        num_runs = read_int("How many main runs? (default=5): ", default=5)
         run_mode_topology_changes(num_runs)
     elif choice == "2":
-        run_mode_increasing_nodes(num_runs)
+        run_mode_increasing_nodes()
     elif choice == "3":
         run_mode_custom()
     else:
