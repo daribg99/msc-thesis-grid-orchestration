@@ -19,12 +19,12 @@ ALGORITHMS = ["1", "2", "3"]     # bruteforce, greedy, random
 CHANGES_PER_T = 1
 
 SPLITTING = "n"
-MAX_LATENCY = "200"
+MAX_LATENCY = "80"
 
 # change ranges
-LAT_MIN, LAT_MAX = 2.0, 25.0
-BW_MIN, BW_MAX = 50, 1000
-STATUS_CHOICES = ["up", "down"]
+LAT_MIN, LAT_MAX = 10.0, 25.0
+BW_MIN, BW_MAX = 50, 300
+STATUS_CHOICES = ["down"]
 
 # ---------------- CONFIG -2 ----------------
 
@@ -528,7 +528,7 @@ def run_mode_topology_changes(num_runs: int):
 
         code = run_one_main_run(
             skip_deploy=False,
-            skip_delay=False,
+            skip_delay=True,
             num_candidates=8,
             num_pmus=3,
             p_extra=0.25,
@@ -634,7 +634,7 @@ def menu():
     print(" AutoPDC Experiment Runner (MENU)")
     print("====================================")
     print("1) 5 main run (topology changes)")
-    print("2) 5 main run (increase topology nodes)")
+    print("2) 4 main run (increase topology nodes)")
     print("3) Other mode not implemented yet")
     print("0) Exit\n")
 
@@ -650,7 +650,7 @@ def main():
         return
 
     if choice == "1":
-        num_runs = read_int("How many main runs? (default=5): ", default=5)
+        num_runs = read_int("How many main runs? (default=3): ", default=5)
         run_mode_topology_changes(num_runs)
     elif choice == "2":
         run_mode_increasing_nodes()

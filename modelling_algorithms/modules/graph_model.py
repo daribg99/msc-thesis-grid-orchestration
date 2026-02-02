@@ -35,7 +35,7 @@ def create_graph(
             return
         G.add_edge(
             u, v,
-            latency=round(random.uniform(2, 9), 2),
+            latency=round(random.uniform(1, 3), 2),
             bandwidth=400,
             status="up"
         )

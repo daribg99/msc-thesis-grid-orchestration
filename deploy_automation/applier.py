@@ -26,18 +26,21 @@ def run_cmd(cmd):
 
 def get_pdc_pod(cluster):
     context = cluster_to_context(cluster)
-    cmd = f"kubectl --context {context} get pods -n lower -o jsonpath='{{.items[*].metadata.name}}'"
-    out = subprocess.check_output(cmd, shell=True).decode().split()
+    cmd = (
+        f"kubectl --context {context} "
+        f"get pods -n lower "
+        f"-l app=openpdc "
+        f"--sort-by=.metadata.creationTimestamp "
+        f"-o jsonpath='{{.items[-1].metadata.name}}'"
+    )
 
-    pods = [
-        p for p in out
-        if "openpdc" in p and not p.startswith("openpdc-test-")
-    ]
+    pod = subprocess.check_output(cmd, shell=True).decode().strip()
 
-    if not pods:
+    if not pod:
         raise RuntimeError(f"No openpdc pod found in {cluster}")
 
-    return pods[0]
+    return pod
+
 
 
 

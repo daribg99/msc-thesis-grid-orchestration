@@ -31,7 +31,7 @@ from test_functions.metrics import (
     jaccard_distance,
     append_metrics_csv,
 )
-from test_functions.plotting import plot_pdc_topology_jaccard, plot_runtime_stacked_per_iteration, plot_total_iteration_boxplot_by_T
+from test_functions.plotting import plot_pdc_topology_jaccard, plot_runtime_stacked_per_iteration, plot_total_iteration_boxplot_by_T, plot_jaccard_boxplot_by_T
 
 
 # ================== Paths ==================
@@ -293,6 +293,7 @@ def main(
             if not skip_deploy:
                 if metrics_csv.exists():
                     plot_pdc_topology_jaccard(metrics_csv, output_dir=plots_dir)
+                    plot_jaccard_boxplot_by_T(RUNS_DIR, output_dir=RUNTIME_ROOT)
 
                 if runtime_file.exists():
                     plot_runtime_stacked_per_iteration(runtime_file, output_dir=plots_dir)

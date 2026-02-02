@@ -121,11 +121,13 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
     candidates = {}
     for pmu in pmus:
         paths_list = []
-        try:
-            gen = nx.shortest_simple_paths(H, pmu, cc, weight="latency")
-        except (nx.NetworkXNoPath, nx.NodeNotFound):
+
+        # ✅ patch minimale: evita crash quando non esiste alcun cammino
+        if not nx.has_path(H, pmu, cc):
             candidates[pmu] = []
             continue
+
+        gen = nx.shortest_simple_paths(H, pmu, cc, weight="latency")
 
         for path in gen:
             d = path_delay(H, path)
@@ -135,6 +137,7 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
                 break
 
         candidates[pmu] = paths_list
+
 
     order = sorted(pmus, key=lambda p: len(candidates.get(p, [])))
 
