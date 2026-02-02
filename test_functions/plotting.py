@@ -533,10 +533,29 @@ def plot_runtime_stacked_per_iteration(
     # Event index (0..K-1)
     T = np.arange(0, K)
 
-    # x positions (nA bars per T)
-    width = 0.25 if nA == 3 else min(0.25, 0.8 / max(nA, 1))
-    offsets = (np.arange(nA) - (nA - 1) / 2.0) * width
+    
+    # x positions (nA bars per T) con gap tra colonne nello stesso gruppo
+    group_width_max = 0.8          # larghezza totale massima occupata dal gruppo su un singolo T
+    gap_ratio = 0.10              # gap come frazione della width (0.2..0.5 tipico)
+
+    # Prima stimo una width "target" come facevi tu, poi ricavo un gap proporzionale
+    width_target = 0.25 if nA == 3 else min(0.25, group_width_max / max(nA, 1))
+
+    # gap proporzionale alla width, ma non deve far sforare il gruppo
+    gap = gap_ratio * width_target
+
+    # width finale: garantisco che nA*width + (nA-1)*gap <= group_width_max
+    den = nA + (nA - 1) * gap_ratio
+    width = min(0.25, group_width_max / den)
+
+    # ricalcolo gap coerente con width finale
+    gap = gap_ratio * width
+
+    effective_step = width + gap
+    offsets = (np.arange(nA) - (nA - 1) / 2.0) * effective_step
     x = np.repeat(T, nA) + np.tile(offsets, K)
+
+
 
     placement_flat = placement.reshape(-1)
     deployer_flat  = deployer.reshape(-1)
