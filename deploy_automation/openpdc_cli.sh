@@ -10,6 +10,7 @@ PXC_POD=""                    # --pxc-pod (default: <cluster_prefix>-pxc-0)
 HAPROXY_SVC=""                # --haproxy-svc (default: <cluster_prefix>-haproxy)
 ROOT_SECRET_NAME=""           # --secret-name (default: <cluster_prefix>-secrets)
 OPENPDC_POD=""                  # --pod <podname>  (OBBLIGATORIO)
+
 # ---------- Helpers ----------
 die() { echo "ERRORE: $*" >&2; exit 1; }
 info() { echo "[INFO] $*"; }
@@ -283,9 +284,9 @@ EOF
 
   ROOTPWD="$(kubectl --context "$DB_CONTEXT" get secrets "$SECRET" -n "$DB_NS" -o jsonpath='{.data.root}' | base64 --decode)"
 
-  EXISTS=$(kubectl --context "$DB_CONTEXT" exec -n "$DB_NS" -it "$POD" -c pxc -- \
-    mysql -h "$SVC" -uroot -p"$ROOTPWD" -N -e "SELECT COUNT(*) FROM ${DB_NAME}.Device WHERE Acronym='${ACRONYM//\'/\'\'}';" 2>/dev/null)
-  if [[ "$EXISTS" =~ ^[0-9]+$ ]] && [[ "$EXISTS" -gt 0 && $FORCE -ne 1 ]]; then
+  EXISTS=$(kubectl --context "$DB_CONTEXT" exec -n "$DB_NS" -i "$POD" -c pxc -- \
+    mysql -h "$SVC" -uroot -p"$ROOTPWD" -N -e "SELECT COUNT(*) FROM ${DB_NAME}.Device WHERE Acronym='${ACRONYM//\'/\'\'}';" )
+  if [[ "$EXISTS" =~ ^[0-9]+$ ]] && [[ "$EXISTS" -gt 0 && ${FORCE:-0} -ne 1 ]]; then
     echo "Device acronym '$ACRONYM' already exists in DB '$DB_NAME'. "
     return 3
   fi

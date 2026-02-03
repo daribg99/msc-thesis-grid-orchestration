@@ -14,14 +14,22 @@ BASE_DIR = Path(__file__).resolve().parent
 OPENPDC_CLI = BASE_DIR / "openpdc_cli.sh"
 
 def run_cmd(cmd):
-    print("\n>>> RUNNING:\n" + " ".join(cmd) + "\n")
-    result = subprocess.run(cmd, text=True, capture_output=True)
+    print("\n>>> RUNNING:\n" + " ".join(map(str, cmd)) + "\n")
+    result = subprocess.run(list(map(str, cmd)), text=True, capture_output=True)
+
+    print(f"--- returncode: {result.returncode} ---")
     if result.stdout:
+        print("--- stdout ---")
         print(result.stdout)
+    if result.stderr:
+        print("--- stderr ---")
+        print(result.stderr)
+
     if result.returncode != 0:
-        if result.stderr:
-            print(result.stderr)
-        raise subprocess.CalledProcessError(result.returncode, cmd, output=result.stdout, stderr=result.stderr)
+        raise subprocess.CalledProcessError(
+            result.returncode, cmd, output=result.stdout, stderr=result.stderr
+        )
+
 
 
 def get_pdc_pod(cluster):

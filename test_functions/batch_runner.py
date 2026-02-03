@@ -529,7 +529,7 @@ def run_mode_topology_changes(num_runs: int):
         code = run_one_main_run(
             skip_deploy=False,
             skip_delay=True,
-            num_candidates=8,
+            num_candidates=15,
             num_pmus=3,
             p_extra=0.25,
             pmu_links=1,
@@ -633,8 +633,8 @@ def menu():
     print("\n====================================")
     print(" AutoPDC Experiment Runner (MENU)")
     print("====================================")
-    print("1) 5 main run (topology changes)")
-    print("2) 4 main run (increase topology nodes)")
+    print("1) Topology changes")
+    print("2) Increase topology nodes")
     print("3) Other mode not implemented yet")
     print("0) Exit\n")
 
@@ -650,7 +650,7 @@ def main():
         return
 
     if choice == "1":
-        num_runs = read_int("How many main runs? (default=3): ", default=5)
+        num_runs = read_int("How many main runs? (default=3): ", default=3)
         run_mode_topology_changes(num_runs)
     elif choice == "2":
         run_mode_increasing_nodes()

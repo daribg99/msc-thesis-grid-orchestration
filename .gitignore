@@ -1,3 +1,18 @@
-deploy_automation/kubeconfigs*
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Bytecode specific version (es. cpython-312)
+*.cpython-*
+
+# Virtual environments
 .venv/
+venv/
+
+# Runtime artifacts
 runtime_results/
+
+# Kubeconfigs generated
+deploy_automation/kubeconfigs*
