@@ -76,32 +76,63 @@ def create_graph(
 
     return G
 
+def _edge_key(u: str, v: str) -> tuple[str, str]:
+    # networkx su Graph è non-diretto: normalizziamo l'ordine
+    return (u, v) if u <= v else (v, u)
 
 
 def modify_latency(G):
+    """
+    Interactive: optionally modifies edge latencies.
+    Returns a list of applied operations:
+      {"type":"latency","u":..., "v":..., "before":..., "after":...}
+    """
+    ops_applied = []
+
     while True:
-            print("\n🔗 Actually latency:")
-            for u, v, data in G.edges(data=True):
-                print(f"{u} – {v}: {data['latency']} ms")
+        print("\n🔗 Actually latency:")
+        for u, v, data in G.edges(data=True):
+            print(f"{u} – {v}: {data['latency']} ms")
 
-            risposta = input("\nDo you want to modify a latency? (y/n): ").lower()
-            if risposta != "y":
-                break
+        risposta = input("\nDo you want to modify a latency? (y/n): ").lower()
+        if risposta != "y":
+            break
 
-            u = input("Node 1: ").strip()
-            v = input("Node 2: ").strip()
+        u = input("Node 1: ").strip()
+        v = input("Node 2: ").strip()
 
-            if G.has_edge(u, v):
-                try:
-                    nuova_latenza = float(input(f"Enter new latency for edge {u}–{v}: "))
-                    G[u][v]["latency"] = nuova_latenza
-                    print(f"✔️ Latency updated for {u}–{v} to {nuova_latenza} ms.")
-                except ValueError:
-                    print("❌ Invalid value.")
-            else:
-                print("❌ The specified edge does not exist.")
+        if G.has_edge(u, v):
+            try:
+                before = float(G[u][v].get("latency"))
+                nuova_latenza = float(input(f"Enter new latency for edge {u}–{v}: "))
+                G[u][v]["latency"] = nuova_latenza
+                print(f"✔️ Latency updated for {u}–{v} to {nuova_latenza} ms.")
+
+                uu, vv = _edge_key(u, v)
+                ops_applied.append({
+                    "type": "latency",
+                    "u": uu,
+                    "v": vv,
+                    "before": before,
+                    "after": nuova_latenza,
+                })
+
+            except ValueError:
+                print("❌ Invalid value.")
+        else:
+            print("❌ The specified edge does not exist.")
+
+    return ops_applied
+
 
 def modify_edge_status(G):
+    """
+    Interactive: optionally modifies edge status.
+    Returns a list of applied operations:
+      {"type":"status","u":..., "v":..., "before":..., "after":...}
+    """
+    ops_applied = []
+
     while True:
         print("\n🔗 Current edge statuses:")
         for u, v, data in G.edges(data=True):
@@ -115,34 +146,67 @@ def modify_edge_status(G):
         v = input("Node 2: ").strip()
 
         if G.has_edge(u, v):
+            before = str(G[u][v].get("status"))
             nuovo_stato = input(f"Enter new status for edge {u}–{v} (up/down): ").strip().lower()
             if nuovo_stato in ["up", "down"]:
                 G[u][v]["status"] = nuovo_stato
                 print(f"✔️ Status updated for {u}–{v} to {nuovo_stato}.")
+
+                uu, vv = _edge_key(u, v)
+                ops_applied.append({
+                    "type": "status",
+                    "u": uu,
+                    "v": vv,
+                    "before": before,
+                    "after": nuovo_stato,
+                })
             else:
                 print("❌ Invalid status. Use 'up' or 'down'.")
         else:
             print("❌ The specified edge does not exist.")
 
+    return ops_applied
+
+
 def modify_bandwidth(G):
+    """
+    Interactive: optionally modifies edge bandwidth.
+    Returns a list of applied operations:
+      {"type":"bandwidth","u":..., "v":..., "before":..., "after":...}
+    """
+    ops_applied = []
+
     while True:
-            print("\n🔗 Current bandwidths:")
-            for u, v, data in G.edges(data=True):
-                print(f"{u} – {v}: {data['bandwidth']} kbps")
+        print("\n🔗 Current bandwidths:")
+        for u, v, data in G.edges(data=True):
+            print(f"{u} – {v}: {data['bandwidth']} kbps")
 
-            risposta = input("\nDo you want to modify a bandwidth? (y/n): ").lower()
-            if risposta != "y":
-                break
+        risposta = input("\nDo you want to modify a bandwidth? (y/n): ").lower()
+        if risposta != "y":
+            break
 
-            u = input("Node 1: ").strip()
-            v = input("Node 2: ").strip()
+        u = input("Node 1: ").strip()
+        v = input("Node 2: ").strip()
 
-            if G.has_edge(u, v):
-                try:
-                    nuova_bandwidth = float(input(f"Enter new bandwidth for edge {u}–{v}: "))
-                    G[u][v]["bandwidth"] = nuova_bandwidth
-                    print(f"✔️ Bandwidth updated for {u}–{v} to {nuova_bandwidth} kbps.")
-                except ValueError:
-                    print("❌ Invalid value.")
-            else:
-                print("❌ The specified edge does not exist.")
+        if G.has_edge(u, v):
+            try:
+                before = float(G[u][v].get("bandwidth"))
+                nuova_bandwidth = float(input(f"Enter new bandwidth for edge {u}–{v}: "))
+                G[u][v]["bandwidth"] = nuova_bandwidth
+                print(f"✔️ Bandwidth updated for {u}–{v} to {nuova_bandwidth} kbps.")
+
+                uu, vv = _edge_key(u, v)
+                ops_applied.append({
+                    "type": "bandwidth",
+                    "u": uu,
+                    "v": vv,
+                    "before": before,
+                    "after": nuova_bandwidth,
+                })
+
+            except ValueError:
+                print("❌ Invalid value.")
+        else:
+            print("❌ The specified edge does not exist.")
+
+    return ops_applied

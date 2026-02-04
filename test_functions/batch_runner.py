@@ -187,6 +187,51 @@ def cleanup():
     shutil.rmtree("deploy_automation/kubeconfigs", ignore_errors=True)
     print("🧼 Cleanup completed.\n")
 
+def _find_snapshot_for_iter(run_dir: Path, it: int) -> Path | None:
+    snaps_dir = run_dir / "snapshots"
+    if not snaps_dir.exists():
+        return None
+    snaps = sorted(snaps_dir.glob(f"snapshot_{it:04d}_*.json"))
+    return snaps[-1] if snaps else None
+
+
+def _load_ops_applied(run_dir: Path, it: int) -> list[dict]:
+    p = _find_snapshot_for_iter(run_dir, it)
+    if p is None:
+        return []
+    try:
+        data = json.loads(p.read_text())
+    except Exception:
+        return []
+    ops = data.get("ops_applied", [])
+    return ops if isinstance(ops, list) else []
+
+
+def build_undo_last_two(run_dir: Path, last_done_iter: int) -> list[dict]:
+    """
+    last_done_iter = l'ultima iterazione COMPLETATA (es: dopo T2 => last_done_iter=2)
+    Undo = ops di (last_done_iter) e (last_done_iter-1), in ordine inverso.
+    """
+    if last_done_iter <= 0:
+        return []  # non hai abbastanza history
+
+    ops = []
+    ops.extend(_load_ops_applied(run_dir, last_done_iter))
+    ops.extend(_load_ops_applied(run_dir, last_done_iter - 1))
+
+    undo: list[dict] = []
+    for op in reversed(ops):
+        try:
+            undo.append({
+                "type": op["type"],   # latency/status/bandwidth
+                "u": op["u"],
+                "v": op["v"],
+                "value": op["before"],
+            })
+        except Exception:
+            continue
+
+    return undo
 
 def run_one_main_run(
     *,
@@ -198,6 +243,8 @@ def run_one_main_run(
     p_extra=0.35,
     pmu_links=1,
 ):
+    global_iter = 0   # segue l'iteration del configurator (T0, T1, T2, ...)
+
     cmd = build_cmd(
         skip_deploy=skip_deploy,
         skip_delay=skip_delay,
@@ -321,6 +368,9 @@ def run_one_main_run(
             continue
 
         if idx == 8:  # repeat
+            # ✅ abbiamo finito UNA iterazione globale
+            global_iter += 1
+
             # abbiamo finito un T per l'algoritmo corrente
             T += 1
 
@@ -328,29 +378,41 @@ def run_one_main_run(
                 # pianifica cambi per il prossimo T basandoti sullo snapshot appena scritto
                 if run_dir is not None:
                     edges = []
-                    # retry breve: aspetta che lo snapshot "ultimo" contenga davvero i path
                     for _ in range(10):  # ~2 secondi
                         edges = latest_snapshot_edges(run_dir)
                         if edges:
                             break
                         time.sleep(0.2)
-
                     pending_ops = build_ops(edges)
                 else:
-                    edges = []
                     pending_ops = []
 
                 print(f"\n🔧 Planned ops for next T={T} (ALG={ALGORITHMS[algo_idx]}): {pending_ops}\n")
                 send("y")
                 continue
 
-            # finiti T0,T1,T2 per questo algoritmo -> cleanup e passa al prossimo algoritmo
+            # finiti T0,T1,T2 per questo algoritmo -> passa al prossimo
             algo_idx += 1
 
+
             if algo_idx < len(ALGORITHMS):
+                undo_ops: List[dict] = []
+
+                # ✅ UNDO delle ultime 2 iterazioni dell’algoritmo appena finito (T1 e T2)
+                # global_iter è il contatore "globale" del configurator:
+                # dopo T2 completato, global_iter == 3, quindi last_done = 2
+                if run_dir is not None and global_iter >= 2:
+                    last_done = global_iter - 1
+                    undo_ops = build_undo_last_two(run_dir, last_done)
+                    print(f"\n↩️ Prepared UNDO from snapshots (last_done={last_done}): {undo_ops}\n")
+                else:
+                    print("\n↩️ UNDO skipped (not enough history yet)\n")
+
                 cleanup()
+
+                # ✅ riparti con lo stesso processo configurator, ma prima applichi UNDO via prompt
                 T = 0
-                pending_ops = []
+                pending_ops = undo_ops
                 print(f"\n➡️ Switching to ALG={ALGORITHMS[algo_idx]} (reset T=0)\n")
                 send("y")
                 continue
@@ -358,6 +420,8 @@ def run_one_main_run(
             # finiti tutti gli algoritmi
             send("n")
             continue
+
+
 
         if idx == 9:  # EOF
             break

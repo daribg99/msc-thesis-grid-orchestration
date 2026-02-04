@@ -192,9 +192,12 @@ def main(
 
     while True:
         print("\n🔄 Updating network conditions...")
-        modify_latency(G)
-        modify_edge_status(G)
-        modify_bandwidth(G)
+        
+        lat_ops = modify_latency(G)
+        st_ops  = modify_edge_status(G)
+        bw_ops  = modify_bandwidth(G)
+        ops_applied = lat_ops + st_ops + bw_ops
+
 
         print("\n⚙️ Running placement algorithm...")
 
@@ -215,7 +218,11 @@ def main(
             "path": path,
             "pdcs": sorted(list(pdcs)) + ["CC"],
             "max_latency": max_latency,
+            "ops_applied": ops_applied,
+            # opzionale ma utile per replay “fair”
+            "topology_seed": seed,
         }
+
 
         # Save result to output.json (to feed deployer/applier)
         with open(output_json, "w") as f:

@@ -116,7 +116,7 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
             print("❌ No valid configuration found (covers 0 PMUs).")    
         return pdcs, pmu_paths, max_latency
 
-    K = 50  
+    K = 10  
 
     candidates = {}
     for pmu in pmus:
