@@ -17,7 +17,7 @@ spec:
     spec:
       initContainers:
       - name: openpdc-init
-        image: riccardo170697/test-openpdc-init:13
+        image: harbor.crownlabs.polito.it/cloud-sandbox/s333985/test-openpdc-init@sha256:8584430dc9fc38233a77d80f946659c6da2816ee919e96763b7e7a8c8f2613cd
         env:
             - name: DB_ROOTPASS
               valueFrom:
@@ -36,7 +36,7 @@ spec:
               value: "172.18.0.5"
       containers:
       - name: openpdc
-        image: claudious96/openpdc:latest
+        image: harbor.crownlabs.polito.it/cloud-sandbox/s333985/claudious96/openpdc@sha256:a42f96354f2ef90fde8f6b21c9f189a284fd3fd6d9a0a0801acc38a8ceb97214
         env:
             - name: DB_USER
               value: openpdc

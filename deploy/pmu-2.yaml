@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
       - name: pmu
-        image: claudious96/pmu-cli
+        image: harbor.crownlabs.polito.it/cloud-sandbox/s333985/claudious96/pmu-cli@sha256:bcc5fe2237ed113266e09d0d0b20b05101a2e03b63d8fe4776084cc12ece248b
         command: [ "PMU", "-i", "pmu.bin" ]
         ports:
         - containerPort: 4712

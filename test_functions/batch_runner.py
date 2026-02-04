@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import time
 import sys
+from test_functions.plotting import plot_time_vs_nodes
 
 from pathlib import Path
 from typing import List, Tuple
@@ -363,74 +364,57 @@ def run_one_main_run(
     return child.exitstatus if child.exitstatus is not None else 0
 
 # ---------------- RUN MODE 2 ----------------
+
 def parse_total_iteration_per_algo(runtime_csv: Path) -> dict[str, float]:
     """
-    Ritorna secondi per ciascun algoritmo:
-      {"Bruteforce": s, "Greedy": s, "Random": s}
-    Runtime atteso (Mode 2):
-      Placement-Bruteforce ...
-      Total Iteration ...
-      Placement-Greedy ...
-      Total Iteration ...
-      Placement-Random ...
-      Total Iteration ...
-    """
-    placement_re = re.compile(r"^Placement-(Greedy|Bruteforce|Random)\s+(.+)$", re.IGNORECASE)
-    total_re = re.compile(r"^Total\s+Iteration\s+(.+?)\s*$", re.IGNORECASE)
+    Ritorna secondi per ciascun algoritmo, usando il tempo sulla riga Placement-*.
 
-    cur_algo = None
+    Atteso:
+      Placement-Bruteforce <tempo>
+      Placement-Greedy <tempo>
+      Placement-Random <tempo>
+
+    Esempi di riga:
+      Placement-Greedy 1234 ms
+      Placement-Random 1.23 s
+    """
+    placement_re = re.compile(
+        r"^Placement-(Greedy|Bruteforce|Random)\s+(.+?)\s*$",
+        re.IGNORECASE
+    )
+
     totals_ms: dict[str, float] = {}
 
-    with open(runtime_csv, "r") as f:
+    with open(runtime_csv, "r", encoding="utf-8") as f:
         for raw in f:
             line = raw.strip()
             if not line or line.startswith("==="):
                 continue
 
+            # normalizza NBSP e spazi multipli
             line = line.replace("\u00a0", " ")
             line = " ".join(line.split())
 
             m = placement_re.match(line)
-            if m:
-                cur_algo = m.group(1).capitalize()
+            if not m:
                 continue
 
-            m = total_re.match(line)
-            if m and cur_algo is not None and cur_algo not in totals_ms:
-                ms = _parse_time_to_ms(m.group(1))
-                if ms is not None:
-                    totals_ms[cur_algo] = ms
-                cur_algo = None
+            algo = m.group(1).capitalize()
+            if algo in totals_ms:
+                continue  # se appare due volte, tieni la prima (puoi cambiarlo)
+
+            time_str = m.group(2)  # la parte dopo Placement-...
+            ms = _parse_time_to_ms(time_str)
+            if ms is not None:
+                totals_ms[algo] = ms
 
     required = ["Bruteforce", "Greedy", "Random"]
     if not all(a in totals_ms for a in required):
-        raise ValueError(f"Missing totals in {runtime_csv}: found={totals_ms}")
+        raise ValueError(f"Missing placement times in {runtime_csv}: found={totals_ms}")
 
     return {k: v / 1000.0 for k, v in totals_ms.items()}  # seconds
 
-def plot_time_vs_nodes(results: list[dict], output_dir: Path):
-    import matplotlib.pyplot as plt
 
-    x = [r["nodes"] for r in results]
-    yB = [r["Bruteforce"] for r in results]
-    yG = [r["Greedy"] for r in results]
-    yR = [r["Random"] for r in results]
-
-    plt.figure(figsize=(9, 5))
-    plt.plot(x, yB, marker="o", label="Bruteforce")
-    plt.plot(x, yG, marker="o", label="Greedy")
-    plt.plot(x, yR, marker="o", label="Random")
-
-    plt.xlabel("Number of nodes (CC + candidates + PMUs)")
-    plt.ylabel("Total iteration time (s)")
-    plt.grid(True)
-    plt.legend()
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    out = output_dir / "time_vs_nodes_by_algorithm.pdf"
-    plt.savefig(out, bbox_inches="tight", dpi=300)
-    plt.close()
-    print(f"📈 Final plot saved to {out}")
 
 def run_one_size_no_changes(*, num_candidates: int, num_pmus: int):
     cmd = build_cmd(
@@ -529,7 +513,7 @@ def run_mode_topology_changes(num_runs: int):
         code = run_one_main_run(
             skip_deploy=False,
             skip_delay=True,
-            num_candidates=15,
+            num_candidates=12,
             num_pmus=3,
             p_extra=0.25,
             pmu_links=1,
@@ -543,8 +527,6 @@ def run_mode_topology_changes(num_runs: int):
 
 def run_mode_increasing_nodes():
     num_runs = 4
-    out_dir = Path("increase_nodes_results")
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     results: list[dict] = []
     skipped = 0
@@ -592,22 +574,10 @@ def run_mode_increasing_nodes():
         print("❌ No valid runs to plot.")
         return
 
-    # ---- CSV aggregato ----
-    agg_csv = out_dir / "results.csv"
-    with open(agg_csv, "w") as f:
-        f.write("nodes,candidates,pmus,Bruteforce,Greedy,Random,run_dir\n")
-        for r in results:
-            f.write(
-                f"{r['nodes']},{r['candidates']},{r['pmus']},"
-                f"{r['Bruteforce']:.3f},{r['Greedy']:.3f},{r['Random']:.3f},"
-                f"{r['run_dir']}\n"
-            )
-
-    print(f"🧾 Aggregated results saved to {agg_csv}")
     if skipped:
         print(f"ℹ️ Skipped runs: {skipped}")
 
-    plot_time_vs_nodes(results, out_dir)
+    plot_time_vs_nodes(results)
 
 
 

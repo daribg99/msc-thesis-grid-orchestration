@@ -813,4 +813,31 @@ def plot_total_iteration_boxplot_by_T(
         plt.show()
 
     plt.close(fig)
+    
+    
+def plot_time_vs_nodes(results: list[dict]):
+    SCRIPT_DIR = Path(__file__).resolve().parent          # .../TESI/test_functions
+    REPO_ROOT  = SCRIPT_DIR.parent                        # .../TESI
+    RUNTIME_ROOT  = REPO_ROOT / "runtime_results"
+    RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
+
+    x = [r["nodes"] for r in results]
+    yB = [r["Bruteforce"] for r in results]
+    yG = [r["Greedy"] for r in results]
+    yR = [r["Random"] for r in results]
+
+    plt.figure(figsize=(9, 5))
+    plt.plot(x, yB, marker="o", label="Bruteforce")
+    plt.plot(x, yG, marker="o", label="Greedy")
+    plt.plot(x, yR, marker="o", label="Random")
+
+    plt.xlabel("Number of nodes (CC + candidates + PMUs)")
+    plt.ylabel("Total iteration time (s)")
+    plt.grid(True)
+    plt.legend()
+
+    out = RUNTIME_ROOT / "time_vs_nodes_by_algorithm.pdf"
+    plt.savefig(out, bbox_inches="tight", dpi=300)
+    plt.close()
+    print(f"📈 Final plot saved to {out}")    
 
