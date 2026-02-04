@@ -457,7 +457,7 @@ WORKLOAD_NAME=()
 
 # --- Deploy openPDC on each cluster (except DB) ---
 NAMESPACE="lower"
-RAW_PDC_URL="https://raw.githubusercontent.com/daribg99/TESI/refs/heads/main/deploy/openpdc.yaml"
+RAW_PDC_URL="https://raw.githubusercontent.com/daribg99/TESI/refs/heads/complete_deploy/deploy/openpdc.yaml"
 if ! curl -fsI "$RAW_PDC_URL" >/dev/null; then
   echo "❌ Manifest unreachable (404?): $RAW_PDC_URL" >&2
   echo "👉 Open the link in your browser and use the 'Raw' button to copy the correct URL." >&2

@@ -359,6 +359,8 @@ def run_one_main_run(
             send("n")
             continue
 
+        if idx == 9:  # EOF
+            break
 
     child.close()
     return child.exitstatus if child.exitstatus is not None else 0
