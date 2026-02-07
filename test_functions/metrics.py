@@ -1,4 +1,39 @@
 import os
+import csv
+from pathlib import Path
+
+def append_metrics_csv(
+    csv_path: Path,
+    T: int,
+    churn_val: float,
+    jaccard_val: float,
+    added: int,
+    removed: int,
+    *,
+    algorithm: str = "",
+    note: str = "",
+):
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    file_exists = csv_path.exists()
+
+    fieldnames = ["algorithm", "T", "churn", "jaccard_distance", "added", "removed", "note"]
+
+    with open(csv_path, "a", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fieldnames)
+
+        if not file_exists:
+            w.writeheader()
+
+        w.writerow({
+            "algorithm": algorithm,
+            "T": T,
+            "churn": f"{churn_val:.6f}",
+            "jaccard_distance": f"{jaccard_val:.6f}",
+            "added": added,
+            "removed": removed,
+            "note": note,
+        })
+
 
 def pdcs_set(data: dict, exclude_cc: bool = True) -> set:
     s = set(data.get("pdcs", []))
@@ -18,20 +53,4 @@ def jaccard_distance(a: set, b: set) -> float:
         return 0.0
     return 1.0 - (len(a & b) / len(union))
 
-def append_metrics_csv(
-    csv_path,
-    t: int,
-    churn_v: float,
-    jdist_v: float,
-    added: int,
-    removed: int
-):
-    header = "T,churn,jaccard_distance,added,removed\n"
-    line = f"{t},{churn_v:.6f},{jdist_v:.6f},{added},{removed}\n"
 
-    if not os.path.exists(csv_path):
-        with open(csv_path, "w") as f:
-            f.write(header)
-
-    with open(csv_path, "a") as f:
-        f.write(line)

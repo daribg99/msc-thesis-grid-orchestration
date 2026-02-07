@@ -112,36 +112,69 @@ clear_volume() {
   local ns="db"
   local ctx="k3d-cluster-db"
 
-  if [ "$IS_FIRST_DEPLOY" -eq 1  ]; then
+  if [ "$IS_FIRST_DEPLOY" -eq 1 ]; then
     echo "ℹ️  No configuration found. Proceeding with new one..."
     return 0
   fi
 
   echo "🧹 Configuration found! Clearing DB volume in '$ctx'..."
 
-  local pxc
-  pxc="$(kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" get pxc -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+  # --- Find PXC name (if any) ---
+  local pxc=""
+  pxc="$(kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" \
+    get perconaxtradbcluster -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
 
   if [[ -n "$pxc" ]]; then
-    echo "   ➤ Deleting PXC: $pxc"
-    kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" delete pxc "$pxc" --ignore-not-found
+    # Check if it's already terminating
+    local deleting=""
+    deleting="$(kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" \
+      get perconaxtradbcluster "$pxc" -o jsonpath='{.metadata.deletionTimestamp}' 2>/dev/null || true)"
+
+    if [[ -n "$deleting" ]]; then
+      echo "   ⚠️  PXC '$pxc' is already terminating (deletionTimestamp=$deleting)."
+    else
+      echo "   ➤ Deleting PXC: $pxc"
+      timeout 60s kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" \
+        delete perconaxtradbcluster "$pxc" \
+        --ignore-not-found \
+        --wait=false \
+        --request-timeout=20s || true
+    fi
+
+    # IMPORTANT: wait for real deletion (bounded), otherwise apply races with Terminating
+    echo "   ⏳ Waiting for PXC '$pxc' to be fully deleted (max 10m)..."
+    timeout 620s kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" \
+      wait --for=delete "perconaxtradbcluster/$pxc" --timeout=600s 2>/dev/null || true
   else
-    echo "   ⚠️ No PerconaXtraDBCluster found."
+    echo "   ℹ️  No PerconaXtraDBCluster found."
   fi
 
-  local pvc
-  pvc="$(kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" get pvc -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+  # --- Delete PVCs (non-blocking) ---
+  # NOTE: Percona can create multiple PVCs; deleting only .items[0] is fragile.
+  # We delete all PVCs in ns=db to avoid leftovers between runs.
+  local -a pvcs=()
+  mapfile -t pvcs < <(kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" \
+    get pvc -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)
 
-  if [[ -n "$pvc" ]]; then
-    echo "   ➤ Deleting PVC: $pvc"
-    kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" delete pvc "$pvc" --ignore-not-found
+  if (( ${#pvcs[@]} > 0 )); then
+    echo "   ➤ Deleting PVCs (${#pvcs[@]})..."
+    for pvc in "${pvcs[@]}"; do
+      [[ -z "$pvc" ]] && continue
+      echo "     - $pvc"
+      timeout 60s kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" \
+        delete pvc "$pvc" \
+        --ignore-not-found \
+        --wait=false \
+        --request-timeout=20s || true
+    done
   else
-    echo "   ⚠️ No PVC to delete."
+    echo "   ℹ️  No PVCs to delete."
   fi
 
-  echo "✅ Volume and DB cluster cleaned."
+  echo "✅ Volume and DB cluster cleanup completed (delete triggered + bounded wait on PXC)."
   echo
 }
+
 
 
 wait_for_percona_ready() {

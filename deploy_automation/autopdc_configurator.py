@@ -132,7 +132,7 @@ def choose_algorithm(G, runtime_file: Path):
     write_runtime(label, elapsed, runtime_file)
     print(f"⏱️ {label} time (algorithm only): {format_hms(elapsed)}")
 
-    return result
+    return (*result, label)
 
 
 # ================== Main Loop ==================
@@ -176,7 +176,11 @@ def main(
     # --- topology monitoring state ---
     iteration = 0
     prev_pdcs = None
+    current_alg = None
+    prev_pdcs_block = None
+    block_T = 0
 
+    
     print("🌐 Creating initial graph...\n")
     G = create_graph(
         num_candidates=num_candidates,
@@ -203,7 +207,7 @@ def main(
 
         total_start = time.perf_counter()
 
-        pdcs, path, max_latency = choose_algorithm(G, runtime_file)
+        pdcs, path, max_latency, alg_name = choose_algorithm(G, runtime_file)
         print(f"✅ PDCs assigned in clusters: {', '.join(pdcs)}, CC")
 
         # Draw updated graph (your draw_graph likely saves under runtime_results;
@@ -234,30 +238,47 @@ def main(
         print(f"🧾 Snapshot saved to {snap_path}")
 
         # --- Compute topology-change metrics (PDC set) ---
+        # --- Compute topology-change metrics (PDC set), with blocks per algorithm ---
         curr_pdcs = pdcs_set(data, exclude_cc=True)
 
-        if prev_pdcs is not None:
-            c = churn(prev_pdcs, curr_pdcs)
-            jd = jaccard_distance(prev_pdcs, curr_pdcs)
-            added = len(curr_pdcs - prev_pdcs)
-            removed = len(prev_pdcs - curr_pdcs)
+        if current_alg != alg_name:
+            current_alg = alg_name
+            prev_pdcs_block = curr_pdcs
+            block_T = 0
 
             append_metrics_csv(
                 metrics_csv,
-                iteration,
+                block_T,
+                0.0,
+                0.0,
+                0,
+                0,
+                algorithm=alg_name,
+                note=f"first iteration for {alg_name}",
+            )
+        else:
+            block_T += 1
+            c = churn(prev_pdcs_block, curr_pdcs)
+            jd = jaccard_distance(prev_pdcs_block, curr_pdcs)
+            added = len(curr_pdcs - prev_pdcs_block)
+            removed = len(prev_pdcs_block - curr_pdcs)
+
+            append_metrics_csv(
+                metrics_csv,
+                block_T,
                 c,
                 jd,
                 added,
                 removed,
+                algorithm=alg_name,
+                note="",
             )
 
-            print(
-                f"📈 Change metric @T={iteration}: churn={c:.3f}, "
-                f"jaccard_distance={jd:.3f} | +{added} -{removed}"
-            )
+            prev_pdcs_block = curr_pdcs
 
-        prev_pdcs = curr_pdcs
+
         iteration += 1
+
 
         # --- Run deployer and applier ---
         if not skip_deploy:

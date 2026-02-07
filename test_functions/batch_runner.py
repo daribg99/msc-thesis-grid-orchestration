@@ -15,7 +15,7 @@ import pexpect
 
 # ---------------- CONFIG - 1 ----------------
 RUNS = 3
-TS_PER_RUN = 3                  # T0,T1,T2
+TS_PER_RUN = 5                  # T0,T1,T2
 ALGORITHMS = ["1", "2", "3"]     # bruteforce, greedy, random
 CHANGES_PER_T = 1
 
@@ -149,6 +149,8 @@ def latest_snapshot_edges(run_dir: Path) -> List[Tuple[str, str]]:
         if len(nodes) < 2:
             continue
         for i in range(len(nodes) - 1):
+            if i == 0:
+                continue  # skip PMU->first
             u, v = nodes[i], nodes[i + 1]
             edges.add(tuple(sorted((u, v))))
 
@@ -207,17 +209,24 @@ def _load_ops_applied(run_dir: Path, it: int) -> list[dict]:
     return ops if isinstance(ops, list) else []
 
 
-def build_undo_last_two(run_dir: Path, last_done_iter: int) -> list[dict]:
+def build_undo_last_T(run_dir: Path, last_done_iter: int) -> list[dict]:
     """
-    last_done_iter = l'ultima iterazione COMPLETATA (es: dopo T2 => last_done_iter=2)
-    Undo = ops di (last_done_iter) e (last_done_iter-1), in ordine inverso.
+    Ora fa UNDO delle ultime (TS_PER_RUN - 1) iterazioni completate.
+    T0 non ha modifiche, quindi si annullano T1..T_{TS_PER_RUN-1}.
+    last_done_iter = ultima iterazione COMPLETATA (es: dopo T4 => last_done_iter=4)
     """
-    if last_done_iter <= 0:
-        return []  # non hai abbastanza history
+    k = TS_PER_RUN - 1
+    if last_done_iter <= 0 or k <= 0:
+        return []
 
-    ops = []
-    ops.extend(_load_ops_applied(run_dir, last_done_iter))
-    ops.extend(_load_ops_applied(run_dir, last_done_iter - 1))
+    # carica ops_applied dagli snapshot: [last_done_iter, last_done_iter-1, ..., last_done_iter-(k-1)]
+    start_it = last_done_iter - (k - 1)
+    if start_it < 1:
+        start_it = 1  # evita it=0 che di solito è T0 senza modifiche
+
+    ops: list[dict] = []
+    for it in range(start_it, last_done_iter + 1):
+        ops.extend(_load_ops_applied(run_dir, it))
 
     undo: list[dict] = []
     for op in reversed(ops):
@@ -226,12 +235,13 @@ def build_undo_last_two(run_dir: Path, last_done_iter: int) -> list[dict]:
                 "type": op["type"],   # latency/status/bandwidth
                 "u": op["u"],
                 "v": op["v"],
-                "value": op["before"],
+                "value": op["before"],  # ripristina il valore precedente
             })
         except Exception:
             continue
 
     return undo
+
 
 def run_one_main_run(
     *,
@@ -398,12 +408,12 @@ def run_one_main_run(
             if algo_idx < len(ALGORITHMS):
                 undo_ops: List[dict] = []
 
-                # ✅ UNDO delle ultime 2 iterazioni dell’algoritmo appena finito (T1 e T2)
+                # ✅ UNDO delle ultime (TS_PER_RUN - 1) iterazioni dell’algoritmo appena finito (T1..T_{TS_PER_RUN-1})
                 # global_iter è il contatore "globale" del configurator:
                 # dopo T2 completato, global_iter == 3, quindi last_done = 2
                 if run_dir is not None and global_iter >= 2:
                     last_done = global_iter - 1
-                    undo_ops = build_undo_last_two(run_dir, last_done)
+                    undo_ops = build_undo_last_T(run_dir, last_done)
                     print(f"\n↩️ Prepared UNDO from snapshots (last_done={last_done}): {undo_ops}\n")
                 else:
                     print("\n↩️ UNDO skipped (not enough history yet)\n")
@@ -695,6 +705,10 @@ def main():
     else:
         print("❌ Invalid choice.")
         return
+    
+    print("👋✅ Test completed. See the result in the runtime_result folder!  \n")    
+    
+    return
 
 
 if __name__ == "__main__":

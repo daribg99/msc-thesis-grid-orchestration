@@ -6,96 +6,97 @@ from pathlib import Path
 import re
 import numpy as np
 from typing import Dict, List
+from matplotlib.patches import Patch   # <-- AGGIUNGI QUI
+
+
+#---------------DEFAULT COLORS AND SHORT LETTERS------------------#
+
+ALGO_COLORS_UNIFIED = {
+    "Bruteforce": "#1f77b4",  # blu
+    "Greedy":     "#2ca02c",  # verde
+    "Random":     "#d62728",  # rosso
+}
+SHORT_LETTER = {"Bruteforce": "B", "Greedy": "G", "Random": "R"}
+
+def _add_letters_above_boxes(ax, bp, positions, box_algos, *, y_mult=1.03, fontsize=9, color="0.25"):
+    """Place B/G/R above each box, anchored to its upper whisker."""
+    whiskers = bp["whiskers"]
+    for i, algo in enumerate(box_algos):
+        w_upper = whiskers[2 * i + 1]              # upper whisker for i-th box
+        y_top = max(w_upper.get_ydata())
+        ax.text(
+            positions[i],
+            y_top * y_mult,
+            SHORT_LETTER.get(algo, ""),
+            ha="center",
+            va="bottom",
+            fontsize=fontsize,
+            color=color,
+        )
+
+
+def _add_unified_legend(ax, *, alg_order, colors):
+    """Legend like Jaccard: colored patches with plain algorithm names."""
+    handles = [
+        Patch(facecolor=colors[a], edgecolor="black", label=a)
+        for a in alg_order
+    ]
+    ax.legend(handles=handles, loc="upper right", frameon=False, fontsize=9)
 #---------------------------------------JACCARD------------------------------------------------#
+
 
 def plot_pdc_topology_jaccard(
     csv_path: Path,
     output_dir: Path | None = None,
     *,
-    num_algorithms: int = 3,
-    skip_blocks: int = 1,
-    K: int | None = None,
     metric_col: str = "jaccard_distance",
+    alg_labels: dict[str, str] | None = None,  # mapping opzionale
 ):
-    # ---- Read rows ----
-    rows = []
-    alg_labels: list[str] = ["Bruteforce", "Greedy", "Random"]
+    # --- Read + group ---
+    series_by_alg: dict[str, dict[int, float]] = {}
+    all_t: set[int] = set()
 
     with open(csv_path, "r", newline="") as f:
         reader = csv.DictReader(f)
-        for row in reader:
-            rows.append(row)
+        for r in reader:
+            alg = (r.get("algorithm") or "").strip()
+            if not alg:
+                continue
 
-    if not rows:
-        print("⚠️ Empty CSV.")
-        return
+            try:
+                t = int(float(r["T"]))
+            except (KeyError, ValueError):
+                continue
 
-    # ---- Compute available complete blocks ----
-    total_blocks = len(rows) // num_algorithms
-    if total_blocks == 0:
-        print("⚠️ Not enough rows to form a single complete block.")
-        return
+            if t == 0:
+                continue  # T0 non ha senso plottarlo
 
-    if skip_blocks >= total_blocks:
-        print(
-            f"⚠️ skip_blocks={skip_blocks} but only {total_blocks} block(s) available."
-        )
-        return
-
-    # ---- Determine how many blocks to plot ----
-    available_blocks = total_blocks - skip_blocks
-    if K is None or K > available_blocks:
-        K = available_blocks
-
-    if K <= 0:
-        print("⚠️ Nothing to plot after applying skip_blocks/K.")
-        return
-
-    # ---- Build series per algorithm (X = event index) ----
-    algo_series = [{"X": [], "Y": []} for _ in range(num_algorithms)]
-
-    for b in range(skip_blocks, skip_blocks + K):
-        event_idx = b - skip_blocks  # 0,1,2,...
-
-        block_rows = rows[
-            b * num_algorithms : (b + 1) * num_algorithms
-        ]
-
-        # sicurezza extra (non dovrebbe servire, ma è robusto)
-        if len(block_rows) < num_algorithms:
-            break
-
-        for algo_idx, r in enumerate(block_rows):
             try:
                 y = float(r[metric_col])
             except (KeyError, ValueError):
                 continue
 
-            algo_series[algo_idx]["X"].append(event_idx)
-            algo_series[algo_idx]["Y"].append(y)
+            series_by_alg.setdefault(alg, {})[t] = y
+            all_t.add(t)
 
-    # ---- Plot ----
+    if not all_t:
+        print("⚠️ No data to plot (after skipping T0).")
+        return
 
-    # ---- Plot ----
+    # --- Plot ---
     plt.figure()
 
-    for i, s in enumerate(algo_series):
-        if not s["X"]:
-            continue
+    for alg in sorted(series_by_alg.keys()):
+        t_to_y = series_by_alg[alg]
+        X = sorted(t_to_y.keys())     # QUI: X = T (1,2,...)
+        Y = [t_to_y[t] for t in X]
 
-        # i = 0,1,2...
-        if isinstance(alg_labels, (list, tuple)) and i < len(alg_labels):
-            name = alg_labels[i]
-        else:
-            name = f"Algorithm {i+1}"
+        label = alg_labels.get(alg, alg) if alg_labels else alg
+        plt.plot(X, Y, marker="o", markersize=8, alpha=0.7, label=label)
 
-        plt.plot(s["X"], s["Y"], marker="o", label=name)
-
-
-
-    xticks = list(range(K))
-    plt.xticks(xticks, [str(i + 1) for i in xticks])  # eventi 1,2,3,...
-    plt.xlabel("Topology change event index")
+    xticks = sorted(all_t)            # QUI: tick = [1,2] se hai solo T1,T2
+    plt.xticks(xticks, [f"T{t}" for t in xticks])
+    plt.xlabel("Topology change index (T)")
     plt.ylabel(metric_col.replace("_", " ").title())
     plt.ylim(0.0, 1.0)
     plt.legend()
@@ -112,196 +113,137 @@ def plot_pdc_topology_jaccard(
     plt.close()
 
 
-
-
 def plot_jaccard_boxplot_by_T(
     runs_dir: Path,
     output_dir: Path | None = None,
     *,
-    alg_order: list[str] = ["Bruteforce", "Greedy", "Random"],
-    required_T: int | None = None,   # se None: usa il minimo T comune tra le run valide
+    alg_order: list[str] = ["Bruteforce", "Greedy", "Random"],  # <-- plain
+    required_T: int | None = None,
+    metric_col: str = "jaccard_distance",
+    t_col: str = "T",
+    algo_col: str = "algorithm",
+    note_col: str = "note",
 ):
-    """
-    For each topology-change event index T (0..K-1), build side-by-side boxplots
-    (one per algorithm) of Jaccard distance across runs.
+    metrics_name = "topology_change.csv"
 
-    Assumes each run has a metrics CSV containing rows in per-event blocks:
-        (Algo 1 row)
-        (Algo 2 row)
-        (Algo 3 row)
-    repeated for each T, and each row contains a column 'jaccard_distance'.
-
-    If a run is missing any required block/algorithm, the whole run is discarded.
-    """
-
-    # --- find per-run metrics.csv ---
-    # Cambia qui se il file si chiama diversamente nella tua repo
-    metrics_name_candidates = ["topology_change.csv"]
+    def _to_plain_alg(name: str) -> str:
+        """Accepts 'Placement-X' or 'X' and returns plain 'X'."""
+        s = (name or "").strip()
+        if s.lower().startswith("placement-"):
+            s = s.split("-", 1)[1].strip()
+        # Normalize capitalization to match keys in ALGO_COLORS_UNIFIED / SHORT_LETTER
+        low = s.lower()
+        if low == "bruteforce":
+            return "Bruteforce"
+        if low == "greedy":
+            return "Greedy"
+        if low == "random":
+            return "Random"
+        return s  # fallback
 
     run_dirs = sorted([p for p in runs_dir.glob("run_*") if p.is_dir()])
     if not run_dirs:
         print(f"⚠️ No run_* directories found under {runs_dir}")
         return
 
-    metrics_files: list[Path] = []
-    for rd in run_dirs:
-        found = None
-        for name in metrics_name_candidates:
-            cand = rd / name
-            if cand.exists():
-                found = cand
-                break
-        if found is not None:
-            metrics_files.append(found)
-
+    metrics_files = [rd / metrics_name for rd in run_dirs if (rd / metrics_name).exists()]
     if not metrics_files:
-        print(f"⚠️ No metrics CSV found under {runs_dir}/run_*/ (tried {metrics_name_candidates})")
+        print(f"⚠️ No {metrics_name} found under {runs_dir}/run_*/")
         return
 
-    # Each valid run contributes:
-    #   per_algo_vals[algo] = [j0, j1, ...]
-    valid_runs: list[dict[str, list[float]]] = []
-
-    # CSV is in blocks of num_algorithms rows per T (like your plot_pdc_topology_jaccard)
-    num_algorithms = len(alg_order)
-    metric_col = "jaccard_distance"
-
-    # optional: normalize algo labels if they exist in a column
-    # If your CSV has a column like 'algorithm' or similar, we can use it.
-    algo_col_candidates = ["algorithm", "algo", "placement", "name"]
-
-    def _normalize_algo(s: str) -> str:
-        s = (s or "").strip().lower()
-        # match your standard names
-        if "brute" in s:
-            return "Bruteforce"
-        if "greedy" in s:
-            return "Greedy"
-        if "random" in s:
-            return "Random"
-        return s.capitalize()
+    # ogni run diventa: run_vals[algo_plain][t] = y  (t>=1)
+    valid_runs: list[dict[str, dict[int, float]]] = []
 
     for mf in metrics_files:
-        # read rows
-        rows: list[dict] = []
+        run_vals: dict[str, dict[int, float]] = {a: {} for a in alg_order}
+
         with open(mf, "r", newline="") as f:
             reader = csv.DictReader(f)
+
+            if reader.fieldnames is None:
+                continue
+            if algo_col not in reader.fieldnames or t_col not in reader.fieldnames or metric_col not in reader.fieldnames:
+                continue
+
+            ok = True
             for r in reader:
-                rows.append(r)
+                alg_raw = (r.get(algo_col) or "").strip()
+                alg = _to_plain_alg(alg_raw)
+                if alg not in run_vals:
+                    continue
 
-        if not rows:
-            continue
-
-        # Must form complete blocks
-        total_blocks = len(rows) // num_algorithms
-        if total_blocks <= 0:
-            continue
-
-        # Build per-algo series for this run
-        per_algo_vals: dict[str, list[float]] = {a: [] for a in alg_order}
-
-        # Try to detect if algorithm column exists
-        algo_col = None
-        for c in algo_col_candidates:
-            if c in rows[0]:
-                algo_col = c
-                break
-
-        # For each block/event T
-        ok = True
-        for b in range(total_blocks):
-            block = rows[b * num_algorithms : (b + 1) * num_algorithms]
-            if len(block) != num_algorithms:
-                ok = False
-                break
-
-            # Two cases:
-            # A) algo column exists -> map by name
-            # B) no algo column -> assume fixed order (Bruteforce, Greedy, Random)
-            if algo_col is not None:
-                seen = set()
-                for r in block:
-                    algo_name = _normalize_algo(r.get(algo_col, ""))
-                    if algo_name not in per_algo_vals:
-                        continue
-                    try:
-                        y = float(r[metric_col])
-                    except (KeyError, ValueError, TypeError):
-                        ok = False
-                        break
-                    per_algo_vals[algo_name].append(y)
-                    seen.add(algo_name)
-
-                if not ok:
-                    break
-
-                # require all algos present for this block
-                if any(a not in seen for a in alg_order):
+                note = (r.get(note_col) or "").strip()
+                try:
+                    t = int(float(r[t_col]))
+                except Exception:
                     ok = False
                     break
-            else:
-                # fixed positional order = alg_order
-                for i, algo in enumerate(alg_order):
-                    r = block[i]
-                    try:
-                        y = float(r[metric_col])
-                    except (KeyError, ValueError, TypeError):
-                        ok = False
-                        break
-                    per_algo_vals[algo].append(y)
 
-                if not ok:
+                if t == 0:
+                    continue
+                if note:
+                    continue
+
+                try:
+                    y = float(r[metric_col])
+                except Exception:
+                    ok = False
                     break
+
+                run_vals[alg][t] = y
 
         if not ok:
             continue
 
-        # Validate lengths consistent across algos
-        lengths = [len(per_algo_vals[a]) for a in alg_order]
-        if len(set(lengths)) != 1 or lengths[0] == 0:
+        # run valida solo se ha almeno un T per tutti gli algoritmi
+        if any(len(run_vals[a]) == 0 for a in alg_order):
             continue
 
-        valid_runs.append(per_algo_vals)
+        valid_runs.append(run_vals)
 
     if not valid_runs:
-        print("⚠️ No valid runs found (missing blocks/algorithms or inconsistent lengths).")
+        print("⚠️ No valid runs found.")
         return
 
-    # Decide K (numero di T da considerare)
-    K_per_run = [len(r[alg_order[0]]) for r in valid_runs]
-    K_common = min(K_per_run)
+    # K comune: minimo maxT tra run e algoritmi
+    def max_t_for_run(run_vals: dict[str, dict[int, float]]) -> int:
+        return min(max(run_vals[a].keys()) for a in alg_order)
 
-    if required_T is None:
-        K = K_common
-    else:
-        K = min(required_T, K_common)
-
+    K_common = min(max_t_for_run(r) for r in valid_runs)
+    K = K_common if required_T is None else min(required_T, K_common)
     if K <= 0:
-        print("⚠️ No T left to plot after applying required_T/min-common.")
+        print("⚠️ No T left to plot.")
         return
 
-    # --- Build box data ---
+    # filtra run che non hanno tutti i T=1..K per tutti gli algoritmi
+    filtered_runs = []
+    for r in valid_runs:
+        if all(all(t in r[a] for t in range(1, K + 1)) for a in alg_order):
+            filtered_runs.append(r)
+
+    if not filtered_runs:
+        print("⚠️ No runs have complete data for common K.")
+        return
+
+    # ---- Build box data in the explicit order: for each T: Bruteforce, Greedy, Random
     box_data: list[list[float]] = []
+    box_algos: list[str] = []
     positions: list[float] = []
 
     nA = len(alg_order)
-    base = np.arange(K)
-    width = 0.22 if nA == 3 else min(0.22, 0.8 / max(nA, 1))
+    base = np.arange(K)  # 0..K-1
+    width = 0.24 if nA == 3 else min(0.24, 0.8 / max(nA, 1))
     offsets = (np.arange(nA) - (nA - 1) / 2.0) * width
 
-    for t in range(K):
-        for j, algo in enumerate(alg_order):
-            samples = [run[algo][t] for run in valid_runs]  # already in [0,1]
+    for idx_t in range(K):
+        t = idx_t + 1
+        for j, alg in enumerate(alg_order):
+            samples = [run[alg][t] for run in filtered_runs]
             box_data.append(samples)
-            positions.append(base[t] + offsets[j])
+            box_algos.append(alg)                 # <-- plain already
+            positions.append(base[idx_t] + offsets[j])
 
     fig, ax = plt.subplots(figsize=(max(9, K * 1.4), 6))
-
-    algo_colors = {
-        "Bruteforce": "#1f77b4",
-        "Greedy":     "#2ca02c",
-        "Random":     "#d62728",
-    }
 
     bp = ax.boxplot(
         box_data,
@@ -312,56 +254,34 @@ def plot_jaccard_boxplot_by_T(
         manage_ticks=False,
     )
 
+    # ---- Unified colors
+    for box, alg in zip(bp["boxes"], box_algos):
+        box.set_facecolor(ALGO_COLORS_UNIFIED.get(alg, "0.8"))
+        box.set_edgecolor("black")
+        box.set_alpha(0.85)
+
+    # ---- Letters B/G/R
+    _add_letters_above_boxes(ax, bp, positions, box_algos)
+
+    # ---- Axes like before
     ax.set_xticks(base)
-    ax.set_xticklabels([f"T{t}" for t in range(K)])
+    ax.set_xticklabels([f"T{t}" for t in range(1, K + 1)])
     ax.set_xlabel("Topology change index (T)")
     ax.set_ylabel("Jaccard distance")
     ax.set_ylim(0.0, 1.0)
     ax.grid(axis="y")
 
-    # Color boxes per algorithm
-    for i, box in enumerate(bp["boxes"]):
-        algo = alg_order[i % len(alg_order)]
-        box.set_facecolor(algo_colors.get(algo, "0.8"))
-        box.set_alpha(0.75)
-        box.set_edgecolor("black")
-
-    # Letters above each box (B/G/R), anchored to upper whisker
-    short = {"Bruteforce": "B", "Greedy": "G", "Random": "R"}
-    whiskers = bp["whiskers"]
-
-    box_idx = 0
-    for t in range(K):
-        for j, algo in enumerate(alg_order):
-            w = whiskers[2 * box_idx + 1]
-            y_top = max(w.get_ydata())
-            ax.text(
-                positions[box_idx],
-                min(1.0, y_top * 1.03),
-                short.get(algo, algo[0].upper()),
-                ha="center",
-                va="bottom",
-                fontsize=9,
-                color="0.25",
-            )
-            box_idx += 1
+    # ---- Legend via helper (plain)
+    _add_unified_legend(ax, alg_order=alg_order, colors=ALGO_COLORS_UNIFIED)
 
     fig.text(
         0.5, 0.96,
-        f"n = {len(valid_runs)} runs completed successfully",
+        f"n = {len(filtered_runs)} runs completed successfully",
         ha="center",
         va="top",
         fontsize=9,
         color="0.35",
     )
-
-    from matplotlib.patches import Patch
-    algo_legend = [
-        Patch(facecolor="none", edgecolor="none", label="B = Bruteforce"),
-        Patch(facecolor="none", edgecolor="none", label="G = Greedy"),
-        Patch(facecolor="none", edgecolor="none", label="R = Random"),
-    ]
-    ax.legend(handles=algo_legend, loc="upper right", frameon=False, fontsize=9)
 
     fig.subplots_adjust(top=0.88, bottom=0.14)
 
@@ -369,11 +289,13 @@ def plot_jaccard_boxplot_by_T(
         output_dir.mkdir(parents=True, exist_ok=True)
         out = output_dir / "jaccard_boxplot_by_T_and_algo.pdf"
         fig.savefig(out, bbox_inches="tight", pad_inches=0.2)
-        print(f"📦 Jaccard boxplot-by-T (per algo) saved to {out}")
+        print(f"📦 Jaccard boxplot-by-T saved to {out}")
     else:
         plt.show()
 
     plt.close(fig)
+
+
 
 
 
@@ -567,10 +489,10 @@ def plot_runtime_stacked_per_iteration(
     ax.bar(x, deployer_flat,  width=width, bottom=placement_flat, label="Deployer")
     ax.bar(x, applier_flat,   width=width, bottom=placement_flat + deployer_flat, label="Applier")
 
-    ax.set_xlabel("Topology change event index")
+    ax.set_xlabel("Topology change index (T)")
     ax.set_ylabel("Time (s)")
     ax.set_xticks(T)
-    ax.set_xticklabels([str(t) for t in T])
+    ax.set_xticklabels([f"T{t}" for t in T])
 
     # ---- Etichette algoritmo sopra ogni colonna (dentro figura) ----
     short = {"Greedy": "G", "Bruteforce": "B", "Random": "R"}
@@ -672,12 +594,10 @@ def plot_total_iteration_boxplot_by_T(
         # --- Validate this run: must have all algos and consistent lengths ---
         present_algos = [a for a in alg_order if len(per_algo_totals[a]) > 0]
         if len(present_algos) != len(alg_order):
-            # manca un algoritmo -> scarta run
             continue
 
         lengths = [len(per_algo_totals[a]) for a in alg_order]
         if len(set(lengths)) != 1:
-            # numero di T diverso tra algoritmi -> scarta run
             continue
 
         if lengths[0] == 0:
@@ -692,11 +612,7 @@ def plot_total_iteration_boxplot_by_T(
     # Decide K (numero di T da considerare)
     K_per_run = [len(r[alg_order[0]]) for r in valid_runs]
     K_common = min(K_per_run)
-
-    if required_T is None:
-        K = K_common
-    else:
-        K = min(required_T, K_common)
+    K = K_common if required_T is None else min(required_T, K_common)
 
     if K <= 0:
         print("⚠️ No T left to plot after applying required_T/min-common.")
@@ -705,27 +621,22 @@ def plot_total_iteration_boxplot_by_T(
     # --- Build box data ---
     # For each T, for each algo -> list of samples across runs (seconds)
     box_data: list[list[float]] = []
+    box_algos: list[str] = []
     positions: list[float] = []
 
-    # Layout: for each T, 3 boxes centered at T with small offsets
     nA = len(alg_order)
-    base = np.arange(K)  # 0..K-1
+    base = np.arange(K)
     width = 0.22 if nA == 3 else min(0.22, 0.8 / max(nA, 1))
     offsets = (np.arange(nA) - (nA - 1) / 2.0) * width
 
     for t in range(K):
         for j, algo in enumerate(alg_order):
-            samples = [run[algo][t] / 1000.0 for run in valid_runs]  # seconds
+            samples = [run[algo][t] / 1000.0 for run in valid_runs]
             box_data.append(samples)
+            box_algos.append(algo)
             positions.append(base[t] + offsets[j])
 
     fig, ax = plt.subplots(figsize=(max(9, K * 1.4), 6))
-
-    algo_colors = {
-        "Bruteforce": "#1f77b4",  # blu
-        "Greedy":     "#2ca02c",  # verde
-        "Random":     "#d62728",  # rosso
-    }
 
     bp = ax.boxplot(
         box_data,
@@ -736,47 +647,16 @@ def plot_total_iteration_boxplot_by_T(
         manage_ticks=False,
     )
 
-    # Tick principali: T0, T1, ...
-    ax.set_xticks(base)
-    ax.set_xticklabels([f"T{t}" for t in range(K)])
-    ax.set_xlabel("Topology change index (T)")
-    ax.set_ylabel("Total iteration time (s)")
-    ax.grid(axis="y")
-
-    # --- Colora i box per algoritmo ---
-    for i, box in enumerate(bp["boxes"]):
-        algo = alg_order[i % len(alg_order)]   # cicla B,G,R
-        box.set_facecolor(algo_colors[algo])
-        box.set_alpha(0.75)
+    # ---- Apply unified colors (same as Jaccard)
+    for box, algo in zip(bp["boxes"], box_algos):
+        box.set_facecolor(ALGO_COLORS_UNIFIED.get(algo, "0.8"))
         box.set_edgecolor("black")
+        box.set_alpha(0.85)
 
-    # Etichette algoritmo sopra ogni box (dentro figura)
-    # --- Lettere B/G/R sopra ogni box (ancorate ai whisker) ---
-    short = {"Bruteforce": "B", "Greedy": "G", "Random": "R"}
+    # ---- Letters B/G/R above boxes (shared helper)
+    _add_letters_above_boxes(ax, bp, positions, box_algos)
 
-    # ogni box ha 2 whisker: prendiamo quello superiore
-    whiskers = bp["whiskers"]
-
-    box_idx = 0
-    for t in range(K):
-        for j, algo in enumerate(alg_order):
-            # whisker superiore del box corrente
-            w = whiskers[2 * box_idx + 1]
-            y_top = max(w.get_ydata())
-
-            ax.text(
-                positions[box_idx],
-                y_top * 1.03,   # leggermente sopra il box
-                short[algo],
-                ha="center",
-                va="bottom",
-                fontsize=9,
-                color="0.25",
-            )
-
-            box_idx += 1
-
-
+    # ---- n-runs note
     fig.text(
         0.5, 0.96,
         f"n = {len(valid_runs)} runs completed successfully",
@@ -786,22 +666,20 @@ def plot_total_iteration_boxplot_by_T(
         color="0.35",
     )
 
-    from matplotlib.patches import Patch
+    # ---- Legend like Jaccard (shared helper)
+    _add_unified_legend(ax, alg_order=alg_order, colors=ALGO_COLORS_UNIFIED)
 
-    algo_legend = [
-        Patch(facecolor="none", edgecolor="none", label="B = Bruteforce"),
-        Patch(facecolor="none", edgecolor="none", label="G = Greedy"),
-        Patch(facecolor="none", edgecolor="none", label="R = Random"),
-    ]
+    # ---- X axis: show T0, T1, T2, ...
+    ax.set_xticks(base)
+    ax.set_xticklabels([f"T{t}" for t in range(K)])
 
-    ax.legend(
-        handles=algo_legend,
-        loc="upper right",
-        frameon=False,
-        fontsize=9,
-    )
+    # ---- Axis labels like Jaccard
+    ax.set_xlabel("Topology change index (T)")
+    ax.set_ylabel("Time (s)")
 
-
+    # ---- Grid like Jaccard
+    ax.grid(axis="y")
+    
     fig.subplots_adjust(top=0.88, bottom=0.14)
 
     if output_dir is not None:
