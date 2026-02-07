@@ -694,28 +694,75 @@ def plot_total_iteration_boxplot_by_T(
     
     
 def plot_time_vs_nodes(results: list[dict]):
+    from pathlib import Path
+    import numpy as np
+    import matplotlib.pyplot as plt
+
     SCRIPT_DIR = Path(__file__).resolve().parent          # .../TESI/test_functions
     REPO_ROOT  = SCRIPT_DIR.parent                        # .../TESI
     RUNTIME_ROOT  = REPO_ROOT / "runtime_results"
     RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
 
-    x = [r["nodes"] for r in results]
-    yB = [r["Bruteforce"] for r in results]
-    yG = [r["Greedy"] for r in results]
-    yR = [r["Random"] for r in results]
+    THRESHOLD = 3 * 60 * 60  # 3 ore in secondi
 
+    # --- Extract series (seconds) ---
+    x = [r["nodes"] for r in results]
+    yB_raw = [r["Bruteforce"] for r in results]
+    yG_raw = [r["Greedy"] for r in results]
+    yR_raw = [r["Random"] for r in results]
+
+    # --- Choose a visible Y cap based on finite (< threshold) values ---
+    all_raw = yB_raw + yG_raw + yR_raw
+    finite_vals = [v for v in all_raw if v < THRESHOLD and np.isfinite(v)]
+
+    if finite_vals:
+        Y_MAX_VIS = max(finite_vals) * 1.30
+    else:
+        # edge case: everything timed out (or missing). show threshold as baseline cap
+        Y_MAX_VIS = float(THRESHOLD)
+
+    # --- Clamp timeouts to Y_MAX_VIS (keeps line continuous) ---
+    def clamp(values):
+        return [Y_MAX_VIS if (v >= THRESHOLD or not np.isfinite(v)) else float(v) for v in values]
+
+    yB = clamp(yB_raw)
+    yG = clamp(yG_raw)
+    yR = clamp(yR_raw)
+
+    # --- Plot ---
     plt.figure(figsize=(9, 5))
     plt.plot(x, yB, marker="o", label="Bruteforce")
     plt.plot(x, yG, marker="o", label="Greedy")
     plt.plot(x, yR, marker="o", label="Random")
 
     plt.xlabel("Number of nodes (CC + candidates + PMUs)")
-    plt.ylabel("Total iteration time (s)")
+    plt.ylabel("Algorithm time (s)")
     plt.grid(True)
     plt.legend()
+
+    plt.ylim(0, Y_MAX_VIS)
+
+    # --- Mark timeouts with arrows + label ---
+    def annotate_timeouts(y_raw):
+        for xi, v in zip(x, y_raw):
+            if v >= THRESHOLD or not np.isfinite(v):
+                plt.annotate(
+                    "Timeout ≥ 3h ↑",
+                    (xi, Y_MAX_VIS),
+                    ha="center",
+                    va="bottom",
+                    fontsize=9,
+                    color="0.25",
+                    clip_on=False,
+                )
+
+    annotate_timeouts(yB_raw)
+    annotate_timeouts(yG_raw)
+    annotate_timeouts(yR_raw)
 
     out = RUNTIME_ROOT / "time_vs_nodes_by_algorithm.pdf"
     plt.savefig(out, bbox_inches="tight", dpi=300)
     plt.close()
-    print(f"📈 Final plot saved to {out}")    
+    print(f"📈 Final plot saved to {out}")
+    
 

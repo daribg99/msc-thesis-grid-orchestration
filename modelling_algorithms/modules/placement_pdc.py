@@ -4,7 +4,48 @@ import numpy as np
 from itertools import islice
 from itertools import combinations
 from itertools import product
+import signal
+from functools import wraps
 
+#-----------------TIMEOUT DECORATOR------------------#
+
+class _TimeoutException(Exception):
+    pass
+
+def timeout_return_empty(seconds: int = 3 * 60 * 60):
+    """
+    Timeout hard. If exceeded: returns ([], {}, None) by default unless the wrapped
+    function returns a 3-tuple with max_latency: then use ([], {}, max_latency).
+    You can override by passing a custom fallback in the wrapper below if needed.
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            def _handler(signum, frame):
+                raise _TimeoutException()
+
+            old_handler = signal.signal(signal.SIGALRM, _handler)
+            signal.alarm(int(seconds))
+            try:
+                return func(*args, **kwargs)
+            except _TimeoutException:
+                # prova a preservare max_latency se presente tra args/kwargs
+                max_latency = kwargs.get("max_latency", None)
+                if max_latency is None and len(args) >= 2:
+                    # molte tue funzioni hanno firma (G, max_latency, ...)
+                    max_latency = args[1]
+                # fallback uniforme: pdcs vuoti + paths vuoti
+                # (se max_latency non esiste, resta None)
+                return ([], {}, max_latency)
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old_handler)
+        return wrapper
+    return decorator
+
+#-----------------PLACEMENT ALGORITHMS------------------#
+
+@timeout_return_empty(3 * 60 * 60)
 def place_pdcs_greedy(G, max_latency, flag_splitting=False):
 
     def edge_key(u, v):
@@ -247,6 +288,7 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
         print("❌ No valid configuration found (covers 0 PMUs).")
     return pdcs, pmu_paths, max_latency
 
+@timeout_return_empty(3 * 60 * 60)
 def place_pdcs_greedy_no_backtracking(G, max_latency, flag_splitting=False):
 
     def edge_key(u, v):
@@ -352,8 +394,7 @@ def place_pdcs_greedy_no_backtracking(G, max_latency, flag_splitting=False):
 
 import random
 
-import random
-
+@timeout_return_empty(3 * 60 * 60)
 def place_pdcs_random(
     G,
     max_latency,
@@ -551,7 +592,7 @@ def place_pdcs_random(
 
     return (pdcs, pmu_paths, max_latency)
        
-       
+@timeout_return_empty(3 * 60 * 60)       
 def place_pdcs_bruteforce(G, max_latency, flag_splitting=True, max_paths_per_pmu=None, cutoff=5):
 
     def is_valid_chain(path, pdc_nodes, G):
