@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import time
 import sys
-from test_functions.plotting import plot_time_vs_nodes
+from test_functions.plotting import plot_time_vs_nodes,plot_box_plot_time_vs_nodes
 
 from pathlib import Path
 from typing import List, Tuple
@@ -601,60 +601,77 @@ def run_mode_topology_changes(num_runs: int):
 
 
 
-def run_mode_increasing_nodes():
-    num_runs = 4
-
+def run_mode_increasing_nodes(num_runs: int):
     results: list[dict] = []
     skipped = 0
 
-    # user-defined sweep
     sweep = list(zip(MODE2_CANDIDATES_SEQ, MODE2_PMUS_SEQ))
 
-    for i, (num_candidates, num_pmus) in enumerate(sweep):
+    for r in range(num_runs):
         print("\n==============================")
-        print(
-            f"🔼 MODE 2 | step {i+1}/{len(sweep)} | "
-            f"candidates={num_candidates}, pmus={num_pmus} (+PMU8)"
-        )
+        print(f"🔁 MODE 2 | RUN {r+1}/{num_runs}")
         print("==============================\n")
 
-        try:
-            run_dir = run_one_size_no_changes(
-                num_candidates=num_candidates,
-                num_pmus=num_pmus,   # PMU8 è sempre aggiunta nel grafo
+        run_results: list[dict] = []
+
+        for i, (num_candidates, num_pmus) in enumerate(sweep):
+            print("\n------------------------------")
+            print(
+                f"Step {i+1}/{len(sweep)} | "
+                f"candidates={num_candidates}, pmus={num_pmus} (+PMU8)"
             )
+            print("------------------------------\n")
 
-            runtime_csv = run_dir / "runtime.csv"
-            totals = parse_total_iteration_per_algo(runtime_csv)
+            try:
+                run_dir = run_one_size_no_changes(
+                    num_candidates=num_candidates,
+                    num_pmus=num_pmus,
+                )
 
-            nodes_total = 1 + num_candidates + num_pmus + 1
-            # CC + candidates + PMUs + PMU8
+                runtime_csv = run_dir / "runtime.csv"
+                totals = parse_total_iteration_per_algo(runtime_csv)
 
-            results.append({
-                "nodes": nodes_total,
-                "candidates": num_candidates,
-                "pmus": num_pmus + 1,  # includendo PMU8
-                "Bruteforce": totals["Bruteforce"],
-                "Greedy": totals["Greedy"],
-                "Random": totals["Random"],
-                "run_dir": str(run_dir),
-            })
+                nodes_total = 1 + num_candidates + num_pmus + 1  # CC + candidates + PMUs + PMU8
 
-        except Exception as e:
-            skipped += 1
-            print(f"⚠️ Skipping run (incomplete): {e}")
+                row = {
+                    "nodes": nodes_total,
+                    "candidates": num_candidates,
+                    "pmus": num_pmus + 1,  # includendo PMU8
+                    "Bruteforce": totals["Bruteforce"],
+                    "Greedy": totals["Greedy"],
+                    "Random": totals["Random"],
+                    "run": r,
+                    "run_dir": str(run_dir),
+                }
 
-        time.sleep(0.5)
+                results.append(row)
+                run_results.append(row)
+
+            except Exception as e:
+                skipped += 1
+                print(f"⚠️ Skipping run-step (incomplete): {e}")
+
+            time.sleep(0.5)
+
+        # ✅ Line plot: SOLO se ho tutti e 4 i punti di questa run
+        # (e per evitare overwrite continuo: lo faccio solo sulla run 0)
+        if r == 0 and len(run_results) == len(sweep):
+            plot_time_vs_nodes(run_results)
 
     if not results:
         print("❌ No valid runs to plot.")
         return
 
     if skipped:
-        print(f"ℹ️ Skipped runs: {skipped}")
+        print(f"ℹ️ Skipped steps: {skipped}")
 
-    plot_time_vs_nodes(results)
+    # ✅ Boxplot solo se ho almeno 2 run COMPLETE per ogni topologia
+    nodes_sorted = sorted({int(rr["nodes"]) for rr in results})
+    counts_per_node = [sum(1 for rr in results if int(rr["nodes"]) == n) for n in nodes_sorted]
+    runs_completed_per_topology = min(counts_per_node) if counts_per_node else 0
 
+    if runs_completed_per_topology >= 2:
+        plot_box_plot_time_vs_nodes(results, threshold_s=60)
 
 
 
@@ -662,7 +679,6 @@ def run_mode_custom():
     """Modalità 3: placeholder for a future mode."""
     print("\n🧩 Mode 'custom' selected.")
     return
-
 
 def read_int(prompt: str, default: int) -> int:
     s = input(prompt).strip()
@@ -699,7 +715,8 @@ def main():
         num_runs = read_int("How many main runs? (default=3): ", default=3)
         run_mode_topology_changes(num_runs)
     elif choice == "2":
-        run_mode_increasing_nodes()
+        num_runs = read_int("How many main runs? (default=1): ", default=1)
+        run_mode_increasing_nodes(num_runs)
     elif choice == "3":
         run_mode_custom()
     else:

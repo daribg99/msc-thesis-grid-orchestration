@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import numpy as np
 from typing import Dict, List
-from matplotlib.patches import Patch   # <-- AGGIUNGI QUI
+from matplotlib.patches import Patch   
 
 
 #---------------DEFAULT COLORS AND SHORT LETTERS------------------#
@@ -50,7 +50,7 @@ def plot_pdc_topology_jaccard(
     output_dir: Path | None = None,
     *,
     metric_col: str = "jaccard_distance",
-    alg_labels: dict[str, str] | None = None,  # mapping opzionale
+    alg_labels: dict[str, str] | None = None,  
 ):
     # --- Read + group ---
     series_by_alg: dict[str, dict[int, float]] = {}
@@ -69,7 +69,7 @@ def plot_pdc_topology_jaccard(
                 continue
 
             if t == 0:
-                continue  # T0 non ha senso plottarlo
+                continue  
 
             try:
                 y = float(r[metric_col])
@@ -88,13 +88,13 @@ def plot_pdc_topology_jaccard(
 
     for alg in sorted(series_by_alg.keys()):
         t_to_y = series_by_alg[alg]
-        X = sorted(t_to_y.keys())     # QUI: X = T (1,2,...)
+        X = sorted(t_to_y.keys())     
         Y = [t_to_y[t] for t in X]
 
         label = alg_labels.get(alg, alg) if alg_labels else alg
         plt.plot(X, Y, marker="o", markersize=8, alpha=0.7, label=label)
 
-    xticks = sorted(all_t)            # QUI: tick = [1,2] se hai solo T1,T2
+    xticks = sorted(all_t)            
     plt.xticks(xticks, [f"T{t}" for t in xticks])
     plt.xlabel("Topology change index (T)")
     plt.ylabel(metric_col.replace("_", " ").title())
@@ -117,7 +117,7 @@ def plot_jaccard_boxplot_by_T(
     runs_dir: Path,
     output_dir: Path | None = None,
     *,
-    alg_order: list[str] = ["Bruteforce", "Greedy", "Random"],  # <-- plain
+    alg_order: list[str] = ["Bruteforce", "Greedy", "Random"],  
     required_T: int | None = None,
     metric_col: str = "jaccard_distance",
     t_col: str = "T",
@@ -131,7 +131,6 @@ def plot_jaccard_boxplot_by_T(
         s = (name or "").strip()
         if s.lower().startswith("placement-"):
             s = s.split("-", 1)[1].strip()
-        # Normalize capitalization to match keys in ALGO_COLORS_UNIFIED / SHORT_LETTER
         low = s.lower()
         if low == "bruteforce":
             return "Bruteforce"
@@ -139,7 +138,7 @@ def plot_jaccard_boxplot_by_T(
             return "Greedy"
         if low == "random":
             return "Random"
-        return s  # fallback
+        return s  
 
     run_dirs = sorted([p for p in runs_dir.glob("run_*") if p.is_dir()])
     if not run_dirs:
@@ -151,7 +150,6 @@ def plot_jaccard_boxplot_by_T(
         print(f"⚠️ No {metrics_name} found under {runs_dir}/run_*/")
         return
 
-    # ogni run diventa: run_vals[algo_plain][t] = y  (t>=1)
     valid_runs: list[dict[str, dict[int, float]]] = []
 
     for mf in metrics_files:
@@ -195,7 +193,6 @@ def plot_jaccard_boxplot_by_T(
         if not ok:
             continue
 
-        # run valida solo se ha almeno un T per tutti gli algoritmi
         if any(len(run_vals[a]) == 0 for a in alg_order):
             continue
 
@@ -205,7 +202,6 @@ def plot_jaccard_boxplot_by_T(
         print("⚠️ No valid runs found.")
         return
 
-    # K comune: minimo maxT tra run e algoritmi
     def max_t_for_run(run_vals: dict[str, dict[int, float]]) -> int:
         return min(max(run_vals[a].keys()) for a in alg_order)
 
@@ -215,7 +211,6 @@ def plot_jaccard_boxplot_by_T(
         print("⚠️ No T left to plot.")
         return
 
-    # filtra run che non hanno tutti i T=1..K per tutti gli algoritmi
     filtered_runs = []
     for r in valid_runs:
         if all(all(t in r[a] for t in range(1, K + 1)) for a in alg_order):
@@ -225,13 +220,12 @@ def plot_jaccard_boxplot_by_T(
         print("⚠️ No runs have complete data for common K.")
         return
 
-    # ---- Build box data in the explicit order: for each T: Bruteforce, Greedy, Random
     box_data: list[list[float]] = []
     box_algos: list[str] = []
     positions: list[float] = []
 
     nA = len(alg_order)
-    base = np.arange(K)  # 0..K-1
+    base = np.arange(K)  
     width = 0.24 if nA == 3 else min(0.24, 0.8 / max(nA, 1))
     offsets = (np.arange(nA) - (nA - 1) / 2.0) * width
 
@@ -240,7 +234,7 @@ def plot_jaccard_boxplot_by_T(
         for j, alg in enumerate(alg_order):
             samples = [run[alg][t] for run in filtered_runs]
             box_data.append(samples)
-            box_algos.append(alg)                 # <-- plain already
+            box_algos.append(alg)                 
             positions.append(base[idx_t] + offsets[j])
 
     fig, ax = plt.subplots(figsize=(max(9, K * 1.4), 6))
@@ -254,16 +248,13 @@ def plot_jaccard_boxplot_by_T(
         manage_ticks=False,
     )
 
-    # ---- Unified colors
     for box, alg in zip(bp["boxes"], box_algos):
         box.set_facecolor(ALGO_COLORS_UNIFIED.get(alg, "0.8"))
         box.set_edgecolor("black")
         box.set_alpha(0.85)
 
-    # ---- Letters B/G/R
     _add_letters_above_boxes(ax, bp, positions, box_algos)
 
-    # ---- Axes like before
     ax.set_xticks(base)
     ax.set_xticklabels([f"T{t}" for t in range(1, K + 1)])
     ax.set_xlabel("Topology change index (T)")
@@ -271,7 +262,6 @@ def plot_jaccard_boxplot_by_T(
     ax.set_ylim(0.0, 1.0)
     ax.grid(axis="y")
 
-    # ---- Legend via helper (plain)
     _add_unified_legend(ax, alg_order=alg_order, colors=ALGO_COLORS_UNIFIED)
 
     fig.text(
@@ -344,12 +334,10 @@ def plot_runtime_stacked_per_iteration(
     skip_T: int = 0,
     K: int | None = None,
 ):
-    # Regex: Placement-ALGO <time>
     placement_re = re.compile(r"^Placement-(Greedy|Bruteforce|Random)\s+(.+)$", re.IGNORECASE)
     deployer_re  = re.compile(r"^Deployer\s+(.+)$", re.IGNORECASE)
     applier_re   = re.compile(r"^Applier\s+(.+)$", re.IGNORECASE)
 
-    # record completi in ordine file: (algo, placement_ms, deployer_ms, applier_ms)
     records: list[tuple[str, float, float, float]] = []
 
     cur_algo = None
@@ -377,7 +365,6 @@ def plot_runtime_stacked_per_iteration(
 
             m = placement_re.match(line)
             if m:
-                # se c'era un blocco incompleto, lo scarto e riparto
                 cur_algo  = m.group(1).capitalize()
                 cur_place = _parse_time_to_ms(m.group(2))
                 cur_dep = None
@@ -395,14 +382,12 @@ def plot_runtime_stacked_per_iteration(
                 _flush_if_complete()
                 continue
 
-            # ignora Total Iteration e altre righe
 
     if not records:
         print("⚠️ No runtime data to plot (no complete blocks parsed).")
         print(f"DEBUG file: {runtime_csv}")
         return
 
-    # ---- Raggruppo per algoritmo (file per-algoritmo) ----
     per_algo: dict[str, list[tuple[float, float, float]]] = {a: [] for a in alg_order}
     for algo, p, d, ap in records:
         if algo in per_algo:
@@ -416,7 +401,6 @@ def plot_runtime_stacked_per_iteration(
     if len(present_algos) != num_algorithms:
         print(f"⚠️ Expected {num_algorithms} algorithms, found {len(present_algos)}: {present_algos}")
 
-    # ---- Robustezza: uso il minimo comune tra gli algoritmi presenti ----
     nT_total = min(len(per_algo[a]) for a in present_algos)
     if nT_total == 0:
         print("⚠️ Not enough data to form any T.")
@@ -435,7 +419,6 @@ def plot_runtime_stacked_per_iteration(
         print("⚠️ K=0 -> nothing to plot.")
         return
 
-    # ---- Matrici (K, nA) ----
     nA = len(present_algos)
     placement = np.zeros((K, nA), dtype=float)
     deployer  = np.zeros((K, nA), dtype=float)
@@ -447,30 +430,22 @@ def plot_runtime_stacked_per_iteration(
         deployer[:,  j] = [x[1] for x in series]
         applier[:,   j] = [x[2] for x in series]
 
-    # ms -> s
     placement /= 1000.0
     deployer  /= 1000.0
     applier   /= 1000.0
 
-    # Event index (0..K-1)
     T = np.arange(0, K)
+  
+    group_width_max = 0.8          
+    gap_ratio = 0.10              
 
-    
-    # x positions (nA bars per T) con gap tra colonne nello stesso gruppo
-    group_width_max = 0.8          # larghezza totale massima occupata dal gruppo su un singolo T
-    gap_ratio = 0.10              # gap come frazione della width (0.2..0.5 tipico)
-
-    # Prima stimo una width "target" come facevi tu, poi ricavo un gap proporzionale
     width_target = 0.25 if nA == 3 else min(0.25, group_width_max / max(nA, 1))
 
-    # gap proporzionale alla width, ma non deve far sforare il gruppo
     gap = gap_ratio * width_target
 
-    # width finale: garantisco che nA*width + (nA-1)*gap <= group_width_max
     den = nA + (nA - 1) * gap_ratio
     width = min(0.25, group_width_max / den)
 
-    # ricalcolo gap coerente con width finale
     gap = gap_ratio * width
 
     effective_step = width + gap
@@ -494,7 +469,6 @@ def plot_runtime_stacked_per_iteration(
     ax.set_xticks(T)
     ax.set_xticklabels([f"T{t}" for t in T])
 
-    # ---- Etichette algoritmo sopra ogni colonna (dentro figura) ----
     short = {"Greedy": "G", "Bruteforce": "B", "Random": "R"}
     total_height = placement + deployer + applier
     y_offset = 0.015 * total_height.max()
@@ -529,31 +503,14 @@ def plot_runtime_stacked_per_iteration(
     plt.close(fig)
 
 
-
-
-
-
 def plot_total_iteration_boxplot_by_T(
     runs_dir: Path,
     output_dir: Path | None = None,
     *,
     alg_order: list[str] = ["Bruteforce", "Greedy", "Random"],
-    required_T: int | None = None,   # se None: usa il minimo T comune tra le run valide
+    required_T: int | None = None,   
 ):
-    """
-    For each topology-change event index T (0..K-1), build 3 side-by-side boxplots
-    (one per algorithm) of Total Iteration times across runs.
-
-    Runtime file format is per-algorithm blocks:
-        Placement-<Algo>
-        Deployer
-        Applier
-        Total Iteration  <time>
-        ... repeated for T
-        then next algorithm, etc.
-
-    If a run is missing any required Total Iteration block for any algorithm, the whole run is discarded.
-    """
+    
 
     runtime_files = sorted(runs_dir.glob("run_*/runtime.csv"))
     if not runtime_files:
@@ -591,7 +548,6 @@ def plot_total_iteration_boxplot_by_T(
                     if ms is not None and cur_algo in per_algo_totals:
                         per_algo_totals[cur_algo].append(ms)
 
-        # --- Validate this run: must have all algos and consistent lengths ---
         present_algos = [a for a in alg_order if len(per_algo_totals[a]) > 0]
         if len(present_algos) != len(alg_order):
             continue
@@ -609,7 +565,6 @@ def plot_total_iteration_boxplot_by_T(
         print("⚠️ No valid runs found (missing blocks or inconsistent lengths).")
         return
 
-    # Decide K (numero di T da considerare)
     K_per_run = [len(r[alg_order[0]]) for r in valid_runs]
     K_common = min(K_per_run)
     K = K_common if required_T is None else min(required_T, K_common)
@@ -618,8 +573,6 @@ def plot_total_iteration_boxplot_by_T(
         print("⚠️ No T left to plot after applying required_T/min-common.")
         return
 
-    # --- Build box data ---
-    # For each T, for each algo -> list of samples across runs (seconds)
     box_data: list[list[float]] = []
     box_algos: list[str] = []
     positions: list[float] = []
@@ -647,16 +600,13 @@ def plot_total_iteration_boxplot_by_T(
         manage_ticks=False,
     )
 
-    # ---- Apply unified colors (same as Jaccard)
     for box, algo in zip(bp["boxes"], box_algos):
         box.set_facecolor(ALGO_COLORS_UNIFIED.get(algo, "0.8"))
         box.set_edgecolor("black")
         box.set_alpha(0.85)
 
-    # ---- Letters B/G/R above boxes (shared helper)
     _add_letters_above_boxes(ax, bp, positions, box_algos)
 
-    # ---- n-runs note
     fig.text(
         0.5, 0.96,
         f"n = {len(valid_runs)} runs completed successfully",
@@ -666,18 +616,14 @@ def plot_total_iteration_boxplot_by_T(
         color="0.35",
     )
 
-    # ---- Legend like Jaccard (shared helper)
     _add_unified_legend(ax, alg_order=alg_order, colors=ALGO_COLORS_UNIFIED)
 
-    # ---- X axis: show T0, T1, T2, ...
     ax.set_xticks(base)
     ax.set_xticklabels([f"T{t}" for t in range(K)])
 
-    # ---- Axis labels like Jaccard
     ax.set_xlabel("Topology change index (T)")
     ax.set_ylabel("Time (s)")
 
-    # ---- Grid like Jaccard
     ax.grid(axis="y")
     
     fig.subplots_adjust(top=0.88, bottom=0.14)
@@ -694,61 +640,76 @@ def plot_total_iteration_boxplot_by_T(
     
     
 def plot_time_vs_nodes(results: list[dict]):
-    from pathlib import Path
-    import numpy as np
-    import matplotlib.pyplot as plt
+    
 
     SCRIPT_DIR = Path(__file__).resolve().parent          # .../TESI/test_functions
     REPO_ROOT  = SCRIPT_DIR.parent                        # .../TESI
     RUNTIME_ROOT  = REPO_ROOT / "runtime_results"
     RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
 
-    THRESHOLD = 3 * 60 * 60  # 3 ore in secondi
+    THRESHOLD = 3 * 60 * 60  
 
-    # --- Extract series (seconds) ---
     x = [r["nodes"] for r in results]
     yB_raw = [r["Bruteforce"] for r in results]
     yG_raw = [r["Greedy"] for r in results]
     yR_raw = [r["Random"] for r in results]
 
-    # --- Choose a visible Y cap based on finite (< threshold) values ---
     all_raw = yB_raw + yG_raw + yR_raw
     finite_vals = [v for v in all_raw if v < THRESHOLD and np.isfinite(v)]
 
     if finite_vals:
         Y_MAX_VIS = max(finite_vals) * 1.30
     else:
-        # edge case: everything timed out (or missing). show threshold as baseline cap
         Y_MAX_VIS = float(THRESHOLD)
 
-    # --- Clamp timeouts to Y_MAX_VIS (keeps line continuous) ---
     def clamp(values):
-        return [Y_MAX_VIS if (v >= THRESHOLD or not np.isfinite(v)) else float(v) for v in values]
+        out = []
+        for v in values:
+            if (not np.isfinite(v)) or (v >= THRESHOLD):
+                out.append(Y_MAX_VIS)
+            else:
+                out.append(float(v))
+        return out
 
     yB = clamp(yB_raw)
     yG = clamp(yG_raw)
     yR = clamp(yR_raw)
 
+    def jitter(values, factor):
+        return [v * factor for v in values]
+
+    yB_plot = jitter(yB, 1.00)  # reference
+    yG_plot = jitter(yG, 1.03)  # +3%
+    yR_plot = jitter(yR, 0.97)  # -3%
+
     # --- Plot ---
     plt.figure(figsize=(9, 5))
-    plt.plot(x, yB, marker="o", label="Bruteforce")
-    plt.plot(x, yG, marker="o", label="Greedy")
-    plt.plot(x, yR, marker="o", label="Random")
+    plt.plot(x, yB_plot, marker="o", label="Bruteforce")
+    plt.plot(x, yG_plot, marker="s", label="Greedy")
+    plt.plot(x, yR_plot, marker="^", label="Random")
 
     plt.xlabel("Number of nodes (CC + candidates + PMUs)")
-    plt.ylabel("Algorithm time (s)")
-    plt.grid(True)
+
+    nodes_sorted = sorted(set(x))
+    plt.xticks(nodes_sorted, [str(n) for n in nodes_sorted])
+
+    plt.ylabel("Algorithm time (s) [log scale]")
+    plt.yscale("log")
+
+    y_min = 1e-3
+    plt.ylim(y_min, Y_MAX_VIS)
+
+    plt.grid(True, which="both")
     plt.legend()
 
-    plt.ylim(0, Y_MAX_VIS)
+    y_anno = Y_MAX_VIS * 1.05
 
-    # --- Mark timeouts with arrows + label ---
     def annotate_timeouts(y_raw):
         for xi, v in zip(x, y_raw):
             if v >= THRESHOLD or not np.isfinite(v):
                 plt.annotate(
                     "Timeout ≥ 3h ↑",
-                    (xi, Y_MAX_VIS),
+                    (xi, y_anno),
                     ha="center",
                     va="bottom",
                     fontsize=9,
@@ -764,5 +725,150 @@ def plot_time_vs_nodes(results: list[dict]):
     plt.savefig(out, bbox_inches="tight", dpi=300)
     plt.close()
     print(f"📈 Final plot saved to {out}")
+
+
     
+
+def plot_box_plot_time_vs_nodes(
+    results: list[dict],
+    output_dir: "Path | None" = None,
+    *,
+    alg_order: list[str] = ["Bruteforce", "Greedy", "Random"],
+    threshold_s: float = 3 * 60 * 60,   # 3 ore
+):
+   
+
+    SCRIPT_DIR = Path(__file__).resolve().parent          # .../TESI/test_functions
+    REPO_ROOT  = SCRIPT_DIR.parent                        # .../TESI
+    RUNTIME_ROOT  = REPO_ROOT / "runtime_results"
+    RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
+
+    nodes_sorted = sorted({int(r["nodes"]) for r in results})
+    if not nodes_sorted:
+        print("⚠️ No data to plot (empty results).")
+        return
+
+    def collect_for_nodes(algo_key: str):
+        data: list[list[float]] = []
+        timeout_counts: list[int] = []
+        for n in nodes_sorted:
+            vals_raw = [float(r[algo_key]) for r in results if int(r["nodes"]) == n]
+            vals_ok = [v for v in vals_raw if np.isfinite(v) and v < threshold_s]
+            timeouts = sum(1 for v in vals_raw if (not np.isfinite(v)) or (v >= threshold_s))
+            data.append(vals_ok)
+            timeout_counts.append(timeouts)
+        return data, timeout_counts
+
+    data_by_algo: dict[str, list[list[float]]] = {}
+    timeouts_by_algo: dict[str, list[int]] = {}
+
+    for algo in alg_order:
+        data_by_algo[algo], timeouts_by_algo[algo] = collect_for_nodes(algo)
+
+    all_ok = []
+    for algo in alg_order:
+        for group in data_by_algo[algo]:
+            all_ok.extend([v for v in group if np.isfinite(v)])
+    Y_MAX_VIS = (max(all_ok) * 1.30) if all_ok else float(threshold_s)
+
+    K = len(nodes_sorted)
+    base = np.arange(K)
+
+    nA = len(alg_order)
+    width = 0.22 if nA == 3 else min(0.22, 0.8 / max(nA, 1))
+    offsets = (np.arange(nA) - (nA - 1) / 2.0) * width
+
+    box_data: list[list[float]] = []
+    box_algos: list[str] = []
+    positions: list[float] = []
+
+    for i_node in range(K):
+        for j, algo in enumerate(alg_order):
+            box_data.append(data_by_algo[algo][i_node])
+            box_algos.append(algo)
+            positions.append(float(base[i_node] + offsets[j]))
+
+    fig, ax = plt.subplots(figsize=(max(10, K * 1.8), 5.5))
+
+    num_nodes = len({r["nodes"] for r in results})
+    num_runs = len(results) // num_nodes if num_nodes > 0 else 0
+
+    fig.text(
+        0.5, 0.96,
+        f"n = {num_runs} runs completed successfully",
+        ha="center",
+        va="top",
+        fontsize=9,
+        color="0.35",
+    )
+
+    bp = ax.boxplot(
+        box_data,
+        positions=positions,
+        widths=width * 0.9,
+        patch_artist=True,
+        showfliers=True,
+        manage_ticks=False,
+    )
+
+    for box, algo in zip(bp["boxes"], box_algos):
+        box.set_facecolor(ALGO_COLORS_UNIFIED.get(algo, "0.8"))
+        box.set_edgecolor("black")
+        box.set_alpha(0.85)
+
+    for med in bp["medians"]:
+        med.set_color("black")
+        med.set_linewidth(1.6)
+    for w in bp["whiskers"]:
+        w.set_color("black")
+        w.set_linewidth(1.2)
+    for c in bp["caps"]:
+        c.set_color("black")
+        c.set_linewidth(1.2)
+
+    _add_letters_above_boxes(ax, bp, positions, box_algos)
+
+    ax.set_xticks(base)
+    ax.set_xticklabels([str(n) for n in nodes_sorted])
+    ax.set_xlabel("Number of nodes (CC + candidates + PMUs)")
+
+    ax.set_yscale("log")
+    ax.set_ylim(1e-3, Y_MAX_VIS)   
+    ax.set_ylabel("Algorithm time (s) [log scale]")
+
+    ax.grid(True, axis="y")
+
+    _add_unified_legend(ax, alg_order=alg_order, colors=ALGO_COLORS_UNIFIED)
+
+    y_anno = Y_MAX_VIS * 1.01
+    for i_node in range(K):
+        parts = []
+        for algo in alg_order:
+            c = timeouts_by_algo[algo][i_node]
+            if c > 0:
+                parts.append(f"{SHORT_LETTER.get(algo, algo[0])}: {c} timeout")
+        if parts:
+            ax.text(
+                base[i_node],
+                y_anno,
+                "  ".join(parts),
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                color="0.25",
+                clip_on=False,
+            )
+
+    fig.subplots_adjust(top=0.88, bottom=0.16)
+
+    if output_dir is None:
+        out_dir = RUNTIME_ROOT
+    else:
+        out_dir = Path(output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+    out = out_dir / "time_vs_nodes_boxplot_by_algorithm.pdf"
+    fig.savefig(out, bbox_inches="tight", dpi=300)
+    plt.close(fig)
+    print(f"📦 Boxplot saved to {out}")
 

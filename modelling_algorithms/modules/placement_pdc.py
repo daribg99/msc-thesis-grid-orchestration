@@ -12,7 +12,7 @@ from functools import wraps
 class _TimeoutException(Exception):
     pass
 
-def timeout_return_empty(seconds: int = 3 * 60 * 60):
+def timeout_return_empty(seconds: int = 1*60*1):
     """
     Timeout hard. If exceeded: returns ([], {}, None) by default unless the wrapped
     function returns a 3-tuple with max_latency: then use ([], {}, max_latency).
@@ -45,7 +45,7 @@ def timeout_return_empty(seconds: int = 3 * 60 * 60):
 
 #-----------------PLACEMENT ALGORITHMS------------------#
 
-@timeout_return_empty(3 * 60 * 60)
+@timeout_return_empty(1*60*1)
 def place_pdcs_greedy(G, max_latency, flag_splitting=False):
 
     def edge_key(u, v):
@@ -288,7 +288,7 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
         print("❌ No valid configuration found (covers 0 PMUs).")
     return pdcs, pmu_paths, max_latency
 
-@timeout_return_empty(3 * 60 * 60)
+@timeout_return_empty(1*60*1)
 def place_pdcs_greedy_no_backtracking(G, max_latency, flag_splitting=False):
 
     def edge_key(u, v):
@@ -394,7 +394,7 @@ def place_pdcs_greedy_no_backtracking(G, max_latency, flag_splitting=False):
 
 import random
 
-@timeout_return_empty(3 * 60 * 60)
+@timeout_return_empty(1*60*1)
 def place_pdcs_random(
     G,
     max_latency,
@@ -592,7 +592,7 @@ def place_pdcs_random(
 
     return (pdcs, pmu_paths, max_latency)
        
-@timeout_return_empty(3 * 60 * 60)       
+@timeout_return_empty(1*60*1)       
 def place_pdcs_bruteforce(G, max_latency, flag_splitting=True, max_paths_per_pmu=None, cutoff=5):
 
     def is_valid_chain(path, pdc_nodes, G):
