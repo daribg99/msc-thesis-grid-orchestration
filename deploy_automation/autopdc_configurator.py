@@ -162,7 +162,7 @@ def main(
 
     metrics_csv  = RUN_DIR / "topology_change.csv"
     runtime_file = RUN_DIR / "runtime.csv"
-    output_json  = RUN_DIR / "output.json"
+    
 
     with open(runtime_file, "w") as f:
         f.write("=== Runtime summary ===\n")
@@ -228,10 +228,6 @@ def main(
         }
 
 
-        # Save result to output.json (to feed deployer/applier)
-        with open(output_json, "w") as f:
-            json.dump(data, f, indent=4)
-        print(f"💾 Results saved to {output_json}")
 
         # --- Save snapshot for this iteration ---
         snap_path = save_snapshot(iteration, data, snapshots_dir)
@@ -283,8 +279,8 @@ def main(
         # --- Run deployer and applier ---
         if not skip_deploy:
             steps = [
-                (["bash", str(DEPLOYER_SH), str(output_json)], "Deployer"),
-                (["python3", "-u", str(APPLIER_PY), str(output_json)], "Applier"),
+                (["bash", str(DEPLOYER_SH), str(snap_path)], "Deployer"),
+                (["python3", "-u", str(APPLIER_PY), str(snap_path)], "Applier"),
             ]
 
             for cmd, label in steps:
@@ -308,7 +304,7 @@ def main(
         # --- Apply network delays ---
         if not skip_delay:
             print("🧪 TESTING MODE: applying delay.")
-            apply_delay(G, str(output_json))
+            apply_delay(G, str(snap_path))
         else:
             print("🧪 DEPLOY MODE: skipping delay application.")
 

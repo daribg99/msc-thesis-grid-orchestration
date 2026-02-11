@@ -6,7 +6,8 @@ import shutil
 import subprocess
 import time
 import sys
-from test_functions.plotting import plot_time_vs_nodes,plot_box_plot_time_vs_nodes
+from test_functions.plotting import plot_time_vs_nodes,plot_box_plot_time_vs_nodes, plot_pdcs_vs_candidates_bar
+
 
 from pathlib import Path
 from typing import List, Tuple
@@ -589,7 +590,7 @@ def run_mode_topology_changes(num_runs: int):
         code = run_one_main_run(
             skip_deploy=False,
             skip_delay=True,
-            num_candidates=12,
+            num_candidates=15,
             num_pmus=3,
             p_extra=0.25,
             pmu_links=1,
@@ -600,9 +601,38 @@ def run_mode_topology_changes(num_runs: int):
         time.sleep(1)
 
 
+                
+
+                
+def _read_snapshot_pdcs_count(snapshots_dir: Path, prefix: str) -> int:
+    """
+    Legge snapshot_000X_*.json dentro snapshots_dir
+    e ritorna il numero di PDC includendo sempre CC.
+    """
+    files = sorted(snapshots_dir.glob(f"{prefix}_*.json"))
+    if not files:
+        raise FileNotFoundError(f"Missing {prefix}_*.json in {snapshots_dir}")
+
+    snap_path = files[0]  # uno per algoritmo
+    with open(snap_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    pdcs = data.get("pdcs", [])
+    if not isinstance(pdcs, list):
+        raise ValueError(f"Invalid 'pdcs' in {snap_path}")
+
+    count = len(pdcs)
+
+    # include sempre CC
+    if "CC" not in pdcs:
+        count += 1
+
+    return count                
+
 
 def run_mode_increasing_nodes(num_runs: int):
     results: list[dict] = []
+    results_pdcs: list[dict] = []
     skipped = 0
 
     sweep = list(zip(MODE2_CANDIDATES_SEQ, MODE2_PMUS_SEQ))
@@ -629,6 +659,8 @@ def run_mode_increasing_nodes(num_runs: int):
                 )
 
                 runtime_csv = run_dir / "runtime.csv"
+                snapshots_dir = run_dir / "snapshots"
+
                 totals = parse_total_iteration_per_algo(runtime_csv)
 
                 nodes_total = 1 + num_candidates + num_pmus + 1  # CC + candidates + PMUs + PMU8
@@ -646,7 +678,23 @@ def run_mode_increasing_nodes(num_runs: int):
 
                 results.append(row)
                 run_results.append(row)
+                pdcs_counts = {
+                    "Bruteforce": _read_snapshot_pdcs_count(snapshots_dir, "snapshot_0000"),
+                    "Greedy": _read_snapshot_pdcs_count(snapshots_dir, "snapshot_0001"),
+                    "Random": _read_snapshot_pdcs_count(snapshots_dir, "snapshot_0002"),
+                }
 
+                row_pdcs = {
+                    "nodes": nodes_total,
+                    "candidates": num_candidates,
+                    "pmus": num_pmus + 1,  # includendo PMU8
+                    "Bruteforce": pdcs_counts["Bruteforce"],
+                    "Greedy": pdcs_counts["Greedy"],
+                    "Random": pdcs_counts["Random"],
+                    "run": r,
+                    "run_dir": str(run_dir),
+                }
+                results_pdcs.append(row_pdcs)
             except Exception as e:
                 skipped += 1
                 print(f"⚠️ Skipping run-step (incomplete): {e}")
@@ -654,9 +702,15 @@ def run_mode_increasing_nodes(num_runs: int):
             time.sleep(0.5)
 
         # ✅ Line plot: SOLO se ho tutti e 4 i punti di questa run
-        # (e per evitare overwrite continuo: lo faccio solo sulla run 0)
         if r == 0 and len(run_results) == len(sweep):
             plot_time_vs_nodes(run_results)
+
+        # Bar plot #PDCs vs candidates (run 0, solo se run completa)
+        if r == 0:
+            run_results_pdcs = [rr for rr in results_pdcs if rr["run"] == r]
+            if len(run_results_pdcs) == len(sweep):
+                plot_pdcs_vs_candidates_bar(run_results_pdcs, r)
+
 
     if not results:
         print("❌ No valid runs to plot.")
@@ -671,7 +725,7 @@ def run_mode_increasing_nodes(num_runs: int):
     runs_completed_per_topology = min(counts_per_node) if counts_per_node else 0
 
     if runs_completed_per_topology >= 2:
-        plot_box_plot_time_vs_nodes(results, threshold_s=60)
+        plot_box_plot_time_vs_nodes(results, threshold_s=3*60*3)
 
 
 

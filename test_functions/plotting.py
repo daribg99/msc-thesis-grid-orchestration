@@ -50,9 +50,8 @@ def plot_pdc_topology_jaccard(
     output_dir: Path | None = None,
     *,
     metric_col: str = "jaccard_distance",
-    alg_labels: dict[str, str] | None = None,  
+    alg_labels: dict[str, str] | None = None,
 ):
-    # --- Read + group ---
     series_by_alg: dict[str, dict[int, float]] = {}
     all_t: set[int] = set()
 
@@ -60,6 +59,7 @@ def plot_pdc_topology_jaccard(
         reader = csv.DictReader(f)
         for r in reader:
             alg = (r.get("algorithm") or "").strip()
+            alg = alg.removeprefix("Placement-")
             if not alg:
                 continue
 
@@ -69,7 +69,7 @@ def plot_pdc_topology_jaccard(
                 continue
 
             if t == 0:
-                continue  
+                continue
 
             try:
                 y = float(r[metric_col])
@@ -84,33 +84,55 @@ def plot_pdc_topology_jaccard(
         return
 
     # --- Plot ---
-    plt.figure()
+    fig, ax = plt.subplots()
 
-    for alg in sorted(series_by_alg.keys()):
+    alg_order = ["Bruteforce", "Greedy", "Random"]
+    marker_map = {"Bruteforce": "o", "Greedy": "s", "Random": "^"}
+
+    for alg in alg_order:
+        if alg not in series_by_alg:
+            continue
+
         t_to_y = series_by_alg[alg]
-        X = sorted(t_to_y.keys())     
+        X = sorted(t_to_y.keys())
         Y = [t_to_y[t] for t in X]
 
-        label = alg_labels.get(alg, alg) if alg_labels else alg
-        plt.plot(X, Y, marker="o", markersize=8, alpha=0.7, label=label)
+        ax.plot(
+            X,
+            Y,
+            marker=marker_map.get(alg, "o"),
+            markersize=6,
+            linewidth=1.8,
+            color=ALGO_COLORS_UNIFIED.get(alg, "0.8"),
+            alpha=0.85,
+            label=(alg_labels.get(alg, alg) if alg_labels else alg),
+        )
 
-    xticks = sorted(all_t)            
-    plt.xticks(xticks, [f"T{t}" for t in xticks])
-    plt.xlabel("Topology change index (T)")
-    plt.ylabel(metric_col.replace("_", " ").title())
-    plt.ylim(0.0, 1.0)
-    plt.legend()
-    plt.grid(True)
+    xticks = sorted(all_t)
+    ax.set_xticks(xticks)
+    ax.set_xticklabels([f"T{t}" for t in xticks])
+
+    ax.set_xlabel("Topology change index (T)")
+    ax.set_ylabel(metric_col.replace("_", " ").title())
+    ax.set_ylim(0.0, 1.0)
+    ax.grid(True)
+
+    _add_unified_legend(
+        ax,
+        alg_order=[a for a in alg_order if a in series_by_alg],
+        colors=ALGO_COLORS_UNIFIED,
+    )
 
     if output_dir is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
         out = output_dir / f"pdc_topology_{metric_col}.pdf"
-        plt.savefig(out, bbox_inches="tight")
+        fig.savefig(out, bbox_inches="tight")
         print(f"📊 Plot saved to {out}")
     else:
         plt.show()
 
-    plt.close()
+    plt.close(fig)
+
 
 
 def plot_jaccard_boxplot_by_T(
@@ -276,12 +298,15 @@ def plot_jaccard_boxplot_by_T(
     fig.subplots_adjust(top=0.88, bottom=0.14)
 
     if output_dir is not None:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        out = output_dir / "jaccard_boxplot_by_T_and_algo.pdf"
+        summary_dir = output_dir / "summarymode1"
+        summary_dir.mkdir(parents=True, exist_ok=True)
+
+        out = summary_dir / "jaccard_boxplot_by_T_and_algo.pdf"
         fig.savefig(out, bbox_inches="tight", pad_inches=0.2)
         print(f"📦 Jaccard boxplot-by-T saved to {out}")
     else:
         plt.show()
+
 
     plt.close(fig)
 
@@ -629,25 +654,26 @@ def plot_total_iteration_boxplot_by_T(
     fig.subplots_adjust(top=0.88, bottom=0.14)
 
     if output_dir is not None:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        out = output_dir / "total_iteration_boxplot_by_T_and_algo.pdf"
+        summary_dir = output_dir / "summarymode1"
+        summary_dir.mkdir(parents=True, exist_ok=True)
+
+        out = summary_dir / "total_iteration_boxplot_by_T_and_algo.pdf"
         fig.savefig(out, bbox_inches="tight", pad_inches=0.2)
         print(f"📦 Total Iteration boxplot-by-T (per algo) saved to {out}")
     else:
         plt.show()
 
     plt.close(fig)
+
     
     
 def plot_time_vs_nodes(results: list[dict]):
     
-
     SCRIPT_DIR = Path(__file__).resolve().parent          # .../TESI/test_functions
     REPO_ROOT  = SCRIPT_DIR.parent                        # .../TESI
-    RUNTIME_ROOT  = REPO_ROOT / "runtime_results"
-    RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
+    
 
-    THRESHOLD = 3 * 60 * 60  
+    THRESHOLD = 3 * 60 * 3  
 
     x = [r["nodes"] for r in results]
     yB_raw = [r["Bruteforce"] for r in results]
@@ -655,25 +681,28 @@ def plot_time_vs_nodes(results: list[dict]):
     yR_raw = [r["Random"] for r in results]
 
     all_raw = yB_raw + yG_raw + yR_raw
-    finite_vals = [v for v in all_raw if v < THRESHOLD and np.isfinite(v)]
+    finite_vals = [v for v in all_raw if np.isfinite(v) and v < THRESHOLD]
+
 
     if finite_vals:
         Y_MAX_VIS = max(finite_vals) * 1.30
     else:
         Y_MAX_VIS = float(THRESHOLD)
 
-    def clamp(values):
+    def mask_threshold(values):
         out = []
         for v in values:
             if (not np.isfinite(v)) or (v >= THRESHOLD):
-                out.append(Y_MAX_VIS)
+                out.append(np.nan)   # ← non viene disegnato
             else:
                 out.append(float(v))
         return out
 
-    yB = clamp(yB_raw)
-    yG = clamp(yG_raw)
-    yR = clamp(yR_raw)
+
+    yB = mask_threshold(yB_raw)
+    yG = mask_threshold(yG_raw)
+    yR = mask_threshold(yR_raw)
+
 
     def jitter(values, factor):
         return [v * factor for v in values]
@@ -683,24 +712,51 @@ def plot_time_vs_nodes(results: list[dict]):
     yR_plot = jitter(yR, 0.97)  # -3%
 
     # --- Plot ---
-    plt.figure(figsize=(9, 5))
-    plt.plot(x, yB_plot, marker="o", label="Bruteforce")
-    plt.plot(x, yG_plot, marker="s", label="Greedy")
-    plt.plot(x, yR_plot, marker="^", label="Random")
+    fig, ax = plt.subplots(figsize=(9, 5))
 
-    plt.xlabel("Number of nodes (CC + candidates + PMUs)")
+    alg_order = ["Bruteforce", "Greedy", "Random"]
+
+    ax.plot(
+        x, yB_plot,
+        marker="o",
+        color=ALGO_COLORS_UNIFIED["Bruteforce"],
+        label="Bruteforce",
+    )
+
+    ax.plot(
+        x, yG_plot,
+        marker="s",
+        color=ALGO_COLORS_UNIFIED["Greedy"],
+        label="Greedy",
+    )
+
+    ax.plot(
+        x, yR_plot,
+        marker="^",
+        color=ALGO_COLORS_UNIFIED["Random"],
+        label="Random",
+    )
+
+    ax.set_xlabel("Number of nodes (CC + candidates + PMUs)")
 
     nodes_sorted = sorted(set(x))
-    plt.xticks(nodes_sorted, [str(n) for n in nodes_sorted])
+    ax.set_xticks(nodes_sorted)
+    ax.set_xticklabels([str(n) for n in nodes_sorted])
 
-    plt.ylabel("Algorithm time (s) [log scale]")
-    plt.yscale("log")
+    ax.set_ylabel("Algorithm time (s) [log scale]")
+    ax.set_yscale("log")
 
     y_min = 1e-3
-    plt.ylim(y_min, Y_MAX_VIS)
+    ax.set_ylim(y_min, Y_MAX_VIS)
 
-    plt.grid(True, which="both")
-    plt.legend()
+    ax.grid(True, which="both")
+
+    _add_unified_legend(
+        ax,
+        alg_order=alg_order,
+        colors=ALGO_COLORS_UNIFIED,
+    )
+
 
     y_anno = Y_MAX_VIS * 1.05
 
@@ -721,10 +777,18 @@ def plot_time_vs_nodes(results: list[dict]):
     annotate_timeouts(yG_raw)
     annotate_timeouts(yR_raw)
 
-    out = RUNTIME_ROOT / "time_vs_nodes_by_algorithm.pdf"
-    plt.savefig(out, bbox_inches="tight", dpi=300)
-    plt.close()
+   
+    SCRIPT_DIR = Path(__file__).resolve().parent
+    REPO_ROOT  = SCRIPT_DIR.parent
+    SUMMARY_DIR = REPO_ROOT / "runtime_results" / "summarymode2"
+    SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
+
+    out = SUMMARY_DIR / "time_vs_nodes_by_algorithm.pdf"
+    fig.savefig(out, bbox_inches="tight", dpi=300)
+    plt.close(fig)
+
     print(f"📈 Final plot saved to {out}")
+
 
 
     
@@ -861,14 +925,103 @@ def plot_box_plot_time_vs_nodes(
 
     fig.subplots_adjust(top=0.88, bottom=0.16)
 
-    if output_dir is None:
-        out_dir = RUNTIME_ROOT
-    else:
-        out_dir = Path(output_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = REPO_ROOT / "runtime_results" / "summarymode2"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
 
     out = out_dir / "time_vs_nodes_boxplot_by_algorithm.pdf"
     fig.savefig(out, bbox_inches="tight", dpi=300)
     plt.close(fig)
     print(f"📦 Boxplot saved to {out}")
+
+
+def plot_pdcs_vs_candidates_bar(run_results_pdcs: list[dict], run_index: int):
+    """
+    Bar plot:
+    X = number of candidate nodes
+    Y = number of PDCs (including CC)
+    3 barre: Bruteforce, Greedy, Random
+
+    Salva in runtime_results/summarymode2.
+    """
+
+    if not run_results_pdcs:
+        return
+
+    alg_order = ["Bruteforce", "Greedy", "Random"]
+
+    # Ordina per candidates
+    run_results_pdcs.sort(key=lambda x: int(x["candidates"]))
+
+    candidates = [int(x["candidates"]) for x in run_results_pdcs]
+    series = {
+        "Bruteforce": [int(x["Bruteforce"]) for x in run_results_pdcs],
+        "Greedy":     [int(x["Greedy"]) for x in run_results_pdcs],
+        "Random":     [int(x["Random"]) for x in run_results_pdcs],
+    }
+
+    x = np.arange(len(candidates))
+    width = 0.25
+    offsets = (np.arange(len(alg_order)) - (len(alg_order) - 1) / 2.0) * width
+
+    fig, ax = plt.subplots()
+
+    # Barre + etichette B/G/R sopra
+    for j, algo in enumerate(alg_order):
+        xpos = x + offsets[j]
+        vals = series[algo]
+
+        bars = ax.bar(
+            xpos,
+            vals,
+            width=width,
+            color=ALGO_COLORS_UNIFIED.get(algo, "0.8"),
+            edgecolor="black",
+            linewidth=0.8,
+        )
+
+        # Lettera sopra ogni barra (B/G/R)
+        letter = SHORT_LETTER.get(algo, "")
+        for rect in bars:
+            h = rect.get_height()
+            ax.text(
+                rect.get_x() + rect.get_width() / 2.0,
+                h + 0.05,               # piccolo offset verticale
+                letter,
+                ha="center",
+                va="bottom",
+                fontsize=9,
+                color="0.25",
+                clip_on=False,
+            )
+
+    ax.set_title("Number of PDCs vs Candidates (CC included)")
+    ax.set_xlabel("Number of candidate nodes")
+    ax.set_ylabel("Number of PDCs (including CC)")
+    ax.set_xticks(x)
+    ax.set_xticklabels([str(c) for c in candidates])
+
+    handles = [
+        Patch(facecolor=ALGO_COLORS_UNIFIED[a], edgecolor="black", label=a)
+        for a in alg_order
+    ]
+
+    ax.legend(
+        handles=handles,
+        loc="upper left",   # ← dentro, in alto a sinistra
+        frameon=False,
+        fontsize=9,
+    )
+    ax.grid(True, axis="y", alpha=0.25)
+    plt.tight_layout()
+
+    # Salvataggio in summarymode2
+    plots_dir = Path("runtime_results") / "summarymode2"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
+    out_path = plots_dir / f"pdcs_vs_candidates_run{run_index}.pdf"
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"✅ Saved PDC bar plot to: {out_path}")
 
