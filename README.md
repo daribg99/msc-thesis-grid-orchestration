@@ -53,6 +53,12 @@ PERCONA_DIR="/your/path/with/percona-xtradb-cluster-operator"
 based on your path where you cloned the Percona repository.
 
 This was necessary because the folder "Percona" cannot be added to the repository because it contains third-party dependencies and configuration files that may include secrets, which are not allowed in the repository.
+
+Then, launch:
+```bash
+docker network create mc-net
+```
+to create the network that contains the k3d clusters. 
 Now you are ready to try the deployment.
 
 
