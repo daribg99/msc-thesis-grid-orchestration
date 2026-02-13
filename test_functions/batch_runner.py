@@ -725,7 +725,7 @@ def run_mode_increasing_nodes(num_runs: int):
     runs_completed_per_topology = min(counts_per_node) if counts_per_node else 0
 
     if runs_completed_per_topology >= 2:
-        plot_box_plot_time_vs_nodes(results, threshold_s=3*60*3)
+        plot_box_plot_time_vs_nodes(results, threshold_s=3*60*60)
 
 
 

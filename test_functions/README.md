@@ -5,8 +5,13 @@ To run topology change tests, run:
 ```bash
 python test_functions/batch_runner.py
 ```
-This script will run N main run, with T changes for each run, with placement algorithm specified inthe script. See the script for more details and settings.
+This script will run N main run, with T changes for each run, with placement algorithm specified inthe script. 
 
+## RUNNING icresing nodes tests:
+```bash
+python test_functions/batch_runner.py
+```
+and select 2nd option. This will run 4 main runs, without anychange but increasing the number of nodes in the cluster. 
 #### NOTE: This following setup is for testing purposes. It give the possibility to see all PMU phasors arrive at the last PDC. This is developed because PDC Manager utility has some problems when PDC are setted up with CLI commands. 
 
 ## PDC-test setup

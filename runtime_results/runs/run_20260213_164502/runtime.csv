@@ -1,0 +1,5 @@
+=== Runtime summary ===
+Placement-Bruteforce 19m 57.58s
+Deployer             4m 25.42s
+Applier              52933.93 ms
+Total Iteration      25m 16.74s

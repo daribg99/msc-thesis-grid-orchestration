@@ -142,10 +142,10 @@ def main(
     skip_deploy: bool = True,
     skip_delay: bool = True,
     # create_graph params
-    num_candidates: int = 8,
+    num_candidates: int = 15,
     num_pmus: int = 3,
     seed: int | None = None,
-    p_extra: float = 0.45,
+    p_extra: float = 0.25,
     cc_min_links: int = 2,
     cc_max_links: int | None = None,
     pmu_links: int = 1,
@@ -334,10 +334,10 @@ def parse_args():
     p.add_argument("--skip-delay", action="store_true", default=True)
     p.add_argument("--no-skip-delay", dest="skip_delay", action="store_false")
 
-    p.add_argument("--num-candidates", type=int, default=8)
+    p.add_argument("--num-candidates", type=int, default=15)
     p.add_argument("--num-pmus", type=int, default=3)
     p.add_argument("--seed", type=int, default=None)
-    p.add_argument("--p-extra", type=float, default=0.45)
+    p.add_argument("--p-extra", type=float, default=0.25)
     p.add_argument("--cc-min-links", type=int, default=2)
     p.add_argument("--cc-max-links", type=int, default=None)
     p.add_argument("--pmu-links", type=int, default=1)

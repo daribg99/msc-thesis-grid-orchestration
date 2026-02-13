@@ -42,6 +42,27 @@ def _add_unified_legend(ax, *, alg_order, colors):
         for a in alg_order
     ]
     ax.legend(handles=handles, loc="upper right", frameon=False, fontsize=9)
+    
+
+
+def clip_by_mad(vals, z_thresh=3.5):
+    vals = np.array([v for v in vals if np.isfinite(v)])
+    if len(vals) < 3:
+        return vals.tolist()
+
+    median = np.median(vals)
+    abs_dev = np.abs(vals - median)
+    mad = np.median(abs_dev)
+
+    if mad == 0:
+        return vals.tolist()
+
+    # Modified Z-score
+    modified_z = 0.6745 * (vals - median) / mad
+
+    filtered = vals[np.abs(modified_z) <= z_thresh]
+    return filtered.tolist()
+    
 #---------------------------------------JACCARD------------------------------------------------#
 
 
@@ -610,6 +631,7 @@ def plot_total_iteration_boxplot_by_T(
     for t in range(K):
         for j, algo in enumerate(alg_order):
             samples = [run[algo][t] / 1000.0 for run in valid_runs]
+            samples = clip_by_mad(samples, z_thresh=3.5)
             box_data.append(samples)
             box_algos.append(algo)
             positions.append(base[t] + offsets[j])
@@ -673,7 +695,7 @@ def plot_time_vs_nodes(results: list[dict]):
     REPO_ROOT  = SCRIPT_DIR.parent                        # .../TESI
     
 
-    THRESHOLD = 3 * 60 * 3  
+    THRESHOLD = 3 * 60 * 60  
 
     x = [r["nodes"] for r in results]
     yB_raw = [r["Bruteforce"] for r in results]

@@ -11,6 +11,8 @@ Folders content:
 - `deploy_automation/`: script to automate deployment, including applier for topology-based configuration and cli for automatic configuration
 - `modeling_algorithms/`: placement and visualization algorithms for PDCs
 - `reinforcement-learning/`: testing RL algorithms for PDC placement 
+- `runtime_results/`: storage for runtime results of experiments
+- `test_functions/`: functions for testing and evaluating the algorithms, including delay applicator and plotting functions
 
 # Important Notes: 
 if you want to try one of the follwing sections, you need to follow the instructions below.
@@ -53,13 +55,6 @@ based on your path where you cloned the Percona repository.
 This was necessary because the folder "Percona" cannot be added to the repository because it contains third-party dependencies and configuration files that may include secrets, which are not allowed in the repository.
 Now you are ready to try the deployment.
 
-# If you want to try the deployment...
-- Go into deploy_automation folder
-- make sure kubeconfigs folders is empty ( only for the first time )
-- run 
-```bash
-./autopdc_configurator.py json_file
-```
 
 # If you want to try entire setup ( algorithms + deployment )...
 - make sure kubeconfigs folders is empty ( only for the first time )
@@ -75,5 +70,50 @@ python -m pip install -r requirements.txt
 ```bash
 python -m deploy_automation.autopdc_configurator
 ```
+The script accept the following arguments:
 
-Note: you need k3d installed. As said before, this is a work in progress, so some parts of the code may not work as expected.
+- `--skip-deploy`  
+  Skip the deployment phase.  
+  **Default:** `true`
+
+- `--no-skip-deploy`  
+  Execute the deployment phase (sets `skip_deploy=false`).
+
+- `--skip-delay`  
+  Skip waiting/delay phases between operations.  
+  **Default:** `true`
+
+- `--no-skip-delay`  
+  Enable delays between operations (sets `skip_delay=false`).
+
+- `--num-candidates <int>`  
+  Number of **candidate nodes** in the generated graph.  
+  **Default:** `15`
+
+- `--num-pmus <int>`  
+  Number of **PMU nodes** in the graph.  
+  **Default:** `3`
+
+- `--seed <int>`  
+  Random seed for reproducibility.  
+  **Default:** `None` (random behavior)
+
+- `--p-extra <float>`  
+  Probability factor for adding extra edges beyond the minimum required structure.  
+  **Default:** `0.25`
+
+- `--cc-min-links <int>`  
+  Minimum number of links connected to the **CC node**.  
+  **Default:** `2`
+
+- `--cc-max-links <int>`  
+  Maximum number of links connected to the **CC node**.  
+  **Default:** `None` (no explicit upper bound)
+
+- `--pmu-links <int>`  
+  Number of links per **PMU node**.  
+  **Default:** `1`
+
+---
+
+Note: you need docker and k3d installed. As said before, this is a work in progress, so some parts of the code may not work as expected.
