@@ -266,7 +266,7 @@ def run_one_main_run(
         pmu_links=pmu_links,
     )
 
-    print(f"[DEBUG] spawning: {' '.join(cmd)}")
+    #print(f"[DEBUG] spawning: {' '.join(cmd)}")
 
     child = pexpect.spawn(cmd[0], cmd[1:], encoding="utf-8", timeout=None)
     child.logfile_read = sys.stdout

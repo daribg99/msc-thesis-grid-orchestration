@@ -13,6 +13,6 @@ venv/
 
 # Runtime artifacts
 #runtime_results/
-runtime_results copy/
+results_mode*/
 # Kubeconfigs generated
 deploy_automation/kubeconfigs*
