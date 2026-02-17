@@ -1,0 +1,55 @@
+{
+    "path": {
+        "PMU1": {
+            "path": [
+                "PMU1",
+                "N6",
+                "CC"
+            ],
+            "delay": 24.82
+        },
+        "PMU2": {
+            "path": [
+                "PMU2",
+                "N3",
+                "N6",
+                "CC"
+            ],
+            "delay": 49.75
+        },
+        "PMU3": {
+            "path": [
+                "PMU3",
+                "N3",
+                "N6",
+                "CC"
+            ],
+            "delay": 49.91
+        },
+        "PMU8": {
+            "path": [
+                "PMU8",
+                "N1",
+                "CC"
+            ],
+            "delay": 24.72
+        }
+    },
+    "pdcs": [
+        "N1",
+        "N3",
+        "N6",
+        "CC"
+    ],
+    "max_latency": 80,
+    "ops_applied": [
+        {
+            "type": "status",
+            "u": "CC",
+            "v": "N5",
+            "before": "up",
+            "after": "down"
+        }
+    ],
+    "topology_seed": null
+}

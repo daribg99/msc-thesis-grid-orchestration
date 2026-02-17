@@ -695,7 +695,7 @@ def plot_time_vs_nodes(results: list[dict]):
     REPO_ROOT  = SCRIPT_DIR.parent                        # .../TESI
     
 
-    THRESHOLD = 3 * 60 * 60  
+    THRESHOLD = 1 * 60 * 60  
 
     x = [r["nodes"] for r in results]
     yB_raw = [r["Bruteforce"] for r in results]

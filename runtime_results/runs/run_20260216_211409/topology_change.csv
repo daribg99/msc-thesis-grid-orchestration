@@ -1,0 +1,16 @@
+algorithm,T,churn,jaccard_distance,added,removed,note
+Placement-Bruteforce,0,0.000000,0.000000,0,0,first iteration for Placement-Bruteforce
+Placement-Bruteforce,1,0.166667,0.166667,0,1,
+Placement-Bruteforce,2,0.000000,0.000000,0,0,
+Placement-Bruteforce,3,0.166667,0.166667,1,0,
+Placement-Bruteforce,4,0.142857,0.142857,1,0,
+Placement-Greedy,0,0.000000,0.000000,0,0,first iteration for Placement-Greedy
+Placement-Greedy,1,0.000000,0.000000,0,0,
+Placement-Greedy,2,0.000000,0.000000,0,0,
+Placement-Greedy,3,0.250000,0.250000,1,1,
+Placement-Greedy,4,0.142857,0.142857,0,1,
+Placement-Random,0,0.000000,0.000000,0,0,first iteration for Placement-Random
+Placement-Random,1,0.000000,0.000000,0,0,
+Placement-Random,2,0.300000,0.300000,1,2,
+Placement-Random,3,0.000000,0.000000,0,0,
+Placement-Random,4,0.444444,0.444444,1,3,

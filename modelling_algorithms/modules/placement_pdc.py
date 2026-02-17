@@ -12,7 +12,7 @@ from functools import wraps
 class _TimeoutException(Exception):
     pass
 
-def timeout_return_empty(seconds: int = 3*60*60):
+def timeout_return_empty(seconds: int = 1*60*60):
     """
     Timeout hard. If exceeded: returns ([], {}, None) by default unless the wrapped
     function returns a 3-tuple with max_latency: then use ([], {}, max_latency).
@@ -45,24 +45,9 @@ def timeout_return_empty(seconds: int = 3*60*60):
 
 #-----------------PLACEMENT ALGORITHMS------------------#
 
-@timeout_return_empty(3*60*60)
+@timeout_return_empty(1*60*60)
 def place_pdcs_greedy(G, max_latency, flag_splitting=False):
-    """
-    Greedy placement with bandwidth + latency constraints.
 
-    - flag_splitting=True:
-        each PMU can take an independent path to CC (no "must-continue-together" rule),
-        only bandwidth + max_latency constraints apply.
-
-    - flag_splitting=False:
-        if two paths meet on a candidate, from that candidate onward they MUST share the
-        same next-hop toward CC (no divergence). Implemented via next_hop_to_cc constraint.
-
-    Objective (both modes):
-        maximize number of served PMUs under max_latency (NOT necessarily minimum delay).
-    """
-
-    import time
     import networkx as nx
 
     # -------------------- helpers --------------------
@@ -92,28 +77,47 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
                 H.add_edge(u, v, **data)
         return H
 
+    # --------- UPDATED FUNCTION WITH STRUCTURAL PRUNING ---------
+
     def k_best_paths_within_latency(H, src, dst, K, max_lat):
-        """
-        Return up to K (path, delay) with delay<=max_lat.
-        Uses shortest_simple_paths generator but stops early.
-        """
+
         if src not in H or dst not in H:
             return []
         if not nx.has_path(H, src, dst):
             return []
 
+        PROCESSING_COST = 21.5
+
+        # Maximum number of candidate nodes allowed in a path
+        # Even ignoring edge latency, more than this would exceed max_lat
+        max_candidates = int(max_lat // PROCESSING_COST) + 2 # to exclude CC and PMU
+
         paths_list = []
+
         try:
             gen = nx.shortest_simple_paths(H, src, dst, weight="latency")
         except (nx.NetworkXNoPath, nx.NodeNotFound):
             return []
 
         for path in gen:
+
+            # ---- PRUNE by candidate count ----
+            num_candidates = sum(
+                1 for n in path
+                if H.nodes[n].get("role") == "candidate"
+            )
+
+            if num_candidates > max_candidates:
+                continue
+
+            # ---- compute full delay only if structurally feasible ----
             d = float(path_delay(H, path))
+
             if d <= max_lat:
                 paths_list.append((path, d))
                 if len(paths_list) >= K:
                     break
+
         return paths_list
 
     # -------------------- build filtered graph --------------------
@@ -126,8 +130,6 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
     pmus = [n for n, d in H.nodes(data=True) if d.get("role") == "PMU"]
     pmu_rate = {pmu: float(H.nodes[pmu].get("data_rate", 0.0)) for pmu in pmus}
 
-    # Optional pre-filter (your original logic) when splitting is NOT allowed:
-    # remove x-CC edges if total attached PMU demand would exceed bandwidth.
     if not flag_splitting:
         attached_demand = {}
         for pmu in pmus:
@@ -144,17 +146,15 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
     # -------------------- MODE: splitting allowed --------------------
 
     if flag_splitting:
+
         used_bw = {}
         pmu_paths = {}
         pdcs = set()
-        delays = []
 
-        # Serve PMUs in some stable order (you can change this if you like)
         for pmu in pmus:
             demand = pmu_rate[pmu]
+            K = 3
 
-            # take first feasible path among k best
-            K = 10
             opts = k_best_paths_within_latency(H, pmu, cc, K=K, max_lat=max_latency)
 
             chosen = None
@@ -178,52 +178,38 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
             if chosen is None:
                 continue
 
-            # apply bandwidth usage
             for a, b in zip(chosen[:-1], chosen[1:]):
                 k = edge_key(a, b)
                 used_bw[k] = used_bw.get(k, 0.0) + demand
 
             pmu_paths[pmu] = {"path": chosen, "delay": chosen_d}
-            delays.append(chosen_d)
 
             for node in chosen:
                 if H.nodes[node].get("role") == "candidate":
                     pdcs.add(node)
 
-        if pdcs:
-            print(f"\n📍 Best configuration covers {len(pmu_paths)}/{len(pmus)} PMUs (max_latency={max_latency}).")
-            for pmu, data in pmu_paths.items():
-                path = data["path"]
-                delay = data["delay"]
-                print(f"{pmu} → CC: {' → '.join(path)}, Delay = {delay:.2f} ms")
-        else:
-            print("❌ No valid configuration found (covers 0 PMUs).")
-
         return pdcs, pmu_paths, max_latency
 
     # -------------------- MODE: splitting NOT allowed --------------------
-    # Greedy + LIMITED backtracking (bounded), to avoid exponential blow-ups.
 
-    # Tunables (safe defaults)
-    K = 5                    # keep small because we will backtrack a bit
-    BACKTRACK_DEPTH = 2      # try changing last 1-2 assignments
+    K = 3 # number of candidate paths to consider per PMU (after structural pruning)
+    BACKTRACK_DEPTH = 3
 
-    # Build candidate options per PMU (up to K)
     candidates = {}
     for pmu in pmus:
-        candidates[pmu] = k_best_paths_within_latency(H, pmu, cc, K=K, max_lat=max_latency)
+        candidates[pmu] = k_best_paths_within_latency(
+            H, pmu, cc, K=K, max_lat=max_latency
+        )
 
-    # Fail-first: PMUs with fewer options first
     order = sorted(pmus, key=lambda p: len(candidates.get(p, [])))
 
-    used_bw = {}            # edge -> used
-    next_hop_to_cc = {}     # candidate node -> next hop toward CC
-    assignment = {}         # pmu -> (path, delay)
+    used_bw = {}
+    next_hop_to_cc = {}
+    assignment = {}
 
     def can_place(pmu, path):
         demand = pmu_rate[pmu]
 
-        # no-divergence rule: candidate nodes can't have two different next-hops toward CC
         for i in range(1, len(path) - 1):
             node = path[i]
             if H.nodes[node].get("role") != "candidate":
@@ -232,7 +218,6 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
             if node in next_hop_to_cc and next_hop_to_cc[node] != nxt:
                 return False
 
-        # bandwidth constraints
         for a, b in zip(path[:-1], path[1:]):
             cap = float(H[a][b].get("bandwidth", float("inf")))
             k = edge_key(a, b)
@@ -244,12 +229,10 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
     def apply_place(pmu, path):
         demand = pmu_rate[pmu]
 
-        # consume bandwidth
         for a, b in zip(path[:-1], path[1:]):
             k = edge_key(a, b)
             used_bw[k] = used_bw.get(k, 0.0) + demand
 
-        # set next-hop constraints on candidate nodes
         for i in range(1, len(path) - 1):
             node = path[i]
             if H.nodes[node].get("role") == "candidate":
@@ -259,7 +242,6 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
         used_bw.clear()
         next_hop_to_cc.clear()
 
-        # rebuild by re-applying each assigned PMU
         for pmu2, (p2, _) in assignment.items():
             dem2 = pmu_rate[pmu2]
             for a, b in zip(p2[:-1], p2[1:]):
@@ -272,18 +254,15 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
 
     def greedy_limited_backtracking():
 
-        # decision stack: (idx_in_order, pmu, chosen_option_index)
         decision_stack = []
         i = 0
         backtrack_streak = 0
 
         while i < len(order):
-            
 
             pmu = order[i]
             opts = candidates.get(pmu, [])
 
-            # if we are revisiting this PMU due to backtracking, start from next option
             start_choice = 0
             if decision_stack and decision_stack[-1][0] == i and decision_stack[-1][1] == pmu:
                 start_choice = decision_stack[-1][2] + 1
@@ -304,37 +283,24 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
                 i += 1
                 continue
 
-            # couldn't place -> try limited backtrack (consecutive)
-            bt_ok = False
-
             if decision_stack:
-                # backtrack one level
                 last_i, last_pmu, last_choice = decision_stack.pop()
-
                 assignment.pop(last_pmu, None)
                 rebuild_constraints_from_assignment()
-
-                # revisit last_pmu at its index, try next option
                 i = last_i
                 decision_stack.append((i, last_pmu, last_choice))
-                bt_ok = True
-
-            # count consecutive backtracks
-            if bt_ok:
                 backtrack_streak += 1
+
                 if backtrack_streak > BACKTRACK_DEPTH:
-                    # too many consecutive backtracks -> give up on this PMU
                     backtrack_streak = 0
                     i += 1
                 continue
 
-            # no backtrack possible -> skip this PMU
             backtrack_streak = 0
             i += 1
 
     greedy_limited_backtracking()
 
-    # Build outputs from assignment
     pmu_paths = {}
     pdcs = set()
 
@@ -344,19 +310,11 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
             if H.nodes[node].get("role") == "candidate":
                 pdcs.add(node)
 
-    if pdcs:
-        print(f"\n📍 Best configuration covers {len(pmu_paths)}/{len(pmus)} PMUs (max_latency={max_latency}).")
-        for pmu, data in pmu_paths.items():
-            path = data["path"]
-            delay = data["delay"]
-            print(f"{pmu} → CC: {' → '.join(path)}, Delay = {delay:.2f} ms")
-    else:
-        print("❌ No valid configuration found (covers 0 PMUs).")
-
     return pdcs, pmu_paths, max_latency
 
 
-@timeout_return_empty(3*60*60)
+
+@timeout_return_empty(1*60*60)
 def place_pdcs_greedy_no_backtracking(G, max_latency, flag_splitting=False):
 
     def edge_key(u, v):
@@ -462,7 +420,7 @@ def place_pdcs_greedy_no_backtracking(G, max_latency, flag_splitting=False):
 
 import random
 
-@timeout_return_empty(3*60*60)
+@timeout_return_empty(1*60*60)
 def place_pdcs_random(
     G,
     max_latency,
@@ -660,7 +618,7 @@ def place_pdcs_random(
 
     return (pdcs, pmu_paths, max_latency)
        
-@timeout_return_empty(3*60*60)       
+@timeout_return_empty(1*60*60)       
 def place_pdcs_bruteforce(G, max_latency, flag_splitting=True, max_paths_per_pmu=None, cutoff=5):
 
     def is_valid_chain(path, pdc_nodes, G):

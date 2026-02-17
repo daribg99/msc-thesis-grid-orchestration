@@ -268,8 +268,11 @@ def run_one_main_run(
 
     #print(f"[DEBUG] spawning: {' '.join(cmd)}")
 
+    #child = pexpect.spawn(cmd[0], cmd[1:], encoding="utf-8", timeout=None)
+    #child.logfile_read = sys.stdout
     child = pexpect.spawn(cmd[0], cmd[1:], encoding="utf-8", timeout=None)
-    child.logfile_read = sys.stdout
+    child.logfile_read = None
+
 
     run_dir = None
 
@@ -725,7 +728,7 @@ def run_mode_increasing_nodes(num_runs: int):
     runs_completed_per_topology = min(counts_per_node) if counts_per_node else 0
 
     if runs_completed_per_topology >= 2:
-        plot_box_plot_time_vs_nodes(results, threshold_s=3*60*60)
+        plot_box_plot_time_vs_nodes(results, threshold_s=1*60*60)
 
 
 
