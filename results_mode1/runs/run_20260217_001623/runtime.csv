@@ -1,0 +1,61 @@
+=== Runtime summary ===
+Placement-Bruteforce 15582.14 ms
+Deployer             5m 09.27s
+Applier              57586.85 ms
+Total Iteration      6m 23.18s
+Placement-Bruteforce 18924.09 ms
+Deployer             4m 53.62s
+Applier              57334.94 ms
+Total Iteration      6m 10.72s
+Placement-Bruteforce 16910.34 ms
+Deployer             4m 23.51s
+Applier              57040.39 ms
+Total Iteration      5m 38.29s
+Placement-Bruteforce 15717.56 ms
+Deployer             5m 33.54s
+Applier              1m 16.56s
+Total Iteration      7m 06.81s
+Placement-Bruteforce 14230.08 ms
+Deployer             6m 06.62s
+Applier              1m 21.14s
+Total Iteration      7m 42.84s
+Placement-Greedy     8.89 ms
+Deployer             5m 09.82s
+Applier              57249.49 ms
+Total Iteration      6m 08.19s
+Placement-Greedy     5.80 ms
+Deployer             4m 23.62s
+Applier              57532.12 ms
+Total Iteration      5m 22.28s
+Placement-Greedy     5.30 ms
+Deployer             4m 52.88s
+Applier              57266.66 ms
+Total Iteration      5m 51.28s
+Placement-Greedy     6.14 ms
+Deployer             4m 24.85s
+Applier              56952.44 ms
+Total Iteration      5m 22.92s
+Placement-Greedy     22.42 ms
+Deployer             4m 23.29s
+Applier              57860.63 ms
+Total Iteration      5m 22.31s
+Placement-Random     55.97 ms
+Deployer             5m 29.15s
+Applier              1m 06.95s
+Total Iteration      6m 37.28s
+Placement-Random     55.20 ms
+Deployer             4m 57.14s
+Applier              1m 06.95s
+Total Iteration      6m 05.35s
+Placement-Random     55.25 ms
+Deployer             4m 41.96s
+Applier              57672.10 ms
+Total Iteration      5m 40.81s
+Placement-Random     58.08 ms
+Deployer             5m 46.49s
+Applier              1m 13.80s
+Total Iteration      7m 01.47s
+Placement-Random     57.21 ms
+Deployer             5m 24.48s
+Applier              1m 10.16s
+Total Iteration      6m 35.73s

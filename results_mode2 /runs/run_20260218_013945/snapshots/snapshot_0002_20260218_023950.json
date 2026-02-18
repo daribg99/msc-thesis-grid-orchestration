@@ -1,0 +1,34 @@
+{
+    "path": {
+        "PMU1": {
+            "path": [
+                "PMU1",
+                "N29",
+                "N14",
+                "N16",
+                "CC"
+            ],
+            "delay": 70.24
+        },
+        "PMU8": {
+            "path": [
+                "PMU8",
+                "N28",
+                "N24",
+                "CC"
+            ],
+            "delay": 47.06
+        }
+    },
+    "pdcs": [
+        "N14",
+        "N16",
+        "N24",
+        "N28",
+        "N29",
+        "CC"
+    ],
+    "max_latency": 80,
+    "ops_applied": [],
+    "topology_seed": null
+}
