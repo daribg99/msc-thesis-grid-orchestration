@@ -7,6 +7,7 @@ import re
 import numpy as np
 from typing import Dict, List
 from matplotlib.patches import Patch   
+import json
 
 
 #---------------DEFAULT COLORS AND SHORT LETTERS------------------#
@@ -687,9 +688,168 @@ def plot_total_iteration_boxplot_by_T(
 
     plt.close(fig)
 
+# ---------------------------------------TIME VS NODES------------------------------------------------#
+ 
+
+
+# ===== MODE2 CONFIG (replicata qui per rendere plotting autonomo) =====
+MODE2_CANDIDATES_SEQ = [10, 20, 30, 40]
+MODE2_PMUS_SEQ       = [0, 1, 2, 3]   # PMU8 aggiunta internamente
+MODE2_BLOCK_SIZE     = 4
+
+# ===== ROOTS =====
+def _repo_root() -> Path:
+    # plotting.py sta in .../TESI/test_functions/plotting.py
+    return Path(__file__).resolve().parent.parent
+
+def _runs_root() -> Path:
+    # .../TESI/runtime_results/runs
+    return _repo_root() / "runtime_results" / "runs"
+
+def _summary_mode2_dir() -> Path:
+    d = _repo_root() / "runtime_results" / "summarymode2"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+def discover_run_dirs() -> list[Path]:
+    runs_dir = _runs_root()
+    if not runs_dir.exists():
+        return []
+    run_dirs = [p for p in runs_dir.iterdir() if p.is_dir() and p.name.startswith("run_")]
+    return sorted(run_dirs, key=lambda p: p.name)
+
+def group_run_dirs(run_dirs: list[Path], block_size: int = MODE2_BLOCK_SIZE) -> list[list[Path]]:
+    blocks = []
+    for i in range(0, len(run_dirs), block_size):
+        blk = run_dirs[i:i + block_size]
+        if len(blk) == block_size:
+            blocks.append(blk)
+    return blocks
+
+# ===== runtime.csv parsing =====
+def _parse_time_to_ms(s: str) -> float | None:
+    s = s.strip().replace("\r", "").replace("\u00a0", " ")
+    s = re.sub(r"\s+", " ", s)
+
+    m = re.fullmatch(r"([\d.]+)\s*ms", s)
+    if m: return float(m.group(1))
+
+    m = re.fullmatch(r"([\d.]+)\s*s", s)
+    if m: return float(m.group(1)) * 1000.0
+
+    m = re.fullmatch(r"(\d+)\s*m\s*([\d.]+)\s*s", s)
+    if m:
+        minutes = int(m.group(1))
+        seconds = float(m.group(2))
+        return (minutes * 60.0 + seconds) * 1000.0
+
+    m = re.fullmatch(r"(\d+)\s*h\s*(\d+)\s*m\s*([\d.]+)\s*s", s)
+    if m:
+        hours = int(m.group(1))
+        minutes = int(m.group(2))
+        seconds = float(m.group(3))
+        return (hours * 3600.0 + minutes * 60.0 + seconds) * 1000.0
+
+    return None
+
+def parse_total_iteration_per_algo(runtime_csv: Path) -> dict[str, float]:
+    placement_re = re.compile(r"^Placement-(Greedy|Bruteforce|Random)\s+(.+?)\s*$", re.IGNORECASE)
+    totals_ms: dict[str, float] = {}
+
+    for raw in runtime_csv.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("==="):
+            continue
+        line = " ".join(line.replace("\u00a0", " ").split())
+
+        m = placement_re.match(line)
+        if not m:
+            continue
+        algo = m.group(1).capitalize()
+        if algo in totals_ms:
+            continue
+
+        ms = _parse_time_to_ms(m.group(2))
+        if ms is not None:
+            totals_ms[algo] = ms
+
+    required = ["Bruteforce", "Greedy", "Random"]
+    if not all(a in totals_ms for a in required):
+        raise ValueError(f"Missing placement times in {runtime_csv}: found={totals_ms}")
+
+    return {k: v / 1000.0 for k, v in totals_ms.items()}  # seconds
+
+# ===== snapshots PDC count =====
+def _read_snapshot_pdcs_count(snapshots_dir: Path, prefix: str) -> int:
+    files = sorted(snapshots_dir.glob(f"{prefix}_*.json"))
+    if not files:
+        raise FileNotFoundError(f"Missing {prefix}_*.json in {snapshots_dir}")
+
+    snap_path = files[0]
+    data = json.loads(snap_path.read_text(encoding="utf-8"))
+
+    pdcs = data.get("pdcs", [])
+    if not isinstance(pdcs, list):
+        raise ValueError(f"Invalid 'pdcs' in {snap_path}")
+
+    count = len(pdcs)
+    if "CC" not in pdcs:
+        count += 1
+    return count
+
+# ===== build MODE2 results from a block =====
+def build_mode2_results_from_block(run_dirs_block: list[Path], *, main_run_idx: int) -> tuple[list[dict], list[dict]]:
+    if len(run_dirs_block) != MODE2_BLOCK_SIZE:
+        raise ValueError("MODE2 block must have exactly 4 run dirs.")
+
+    results: list[dict] = []
+    results_pdcs: list[dict] = []
+
+    for i, run_dir in enumerate(run_dirs_block):
+        num_candidates = MODE2_CANDIDATES_SEQ[i]
+        num_pmus = MODE2_PMUS_SEQ[i] + 1  # include PMU8
+        nodes_total = 1 + num_candidates + num_pmus + 1  # CC + candidates + PMUs(incl PMU8) + CC? -> replico la tua formula
+
+        runtime_csv = run_dir / "runtime.csv"
+        snapshots_dir = run_dir / "snapshots"
+
+        totals = parse_total_iteration_per_algo(runtime_csv)
+
+        row = {
+            "nodes": nodes_total,
+            "candidates": num_candidates,
+            "pmus": num_pmus,
+            "Bruteforce": totals["Bruteforce"],
+            "Greedy": totals["Greedy"],
+            "Random": totals["Random"],
+            "run": main_run_idx,
+            "run_dir": str(run_dir),
+        }
+        results.append(row)
+
+        pdcs_counts = {
+            "Bruteforce": _read_snapshot_pdcs_count(snapshots_dir, "snapshot_0000"),
+            "Greedy": _read_snapshot_pdcs_count(snapshots_dir, "snapshot_0001"),
+            "Random": _read_snapshot_pdcs_count(snapshots_dir, "snapshot_0002"),
+        }
+
+        row_pdcs = {
+            "nodes": nodes_total,
+            "candidates": num_candidates,
+            "pmus": num_pmus,
+            "Bruteforce": pdcs_counts["Bruteforce"],
+            "Greedy": pdcs_counts["Greedy"],
+            "Random": pdcs_counts["Random"],
+            "run": main_run_idx,
+            "run_dir": str(run_dir),
+        }
+        results_pdcs.append(row_pdcs)
+
+    return results, results_pdcs
+ 
+ 
     
-    
-def plot_time_vs_nodes(results: list[dict]):
+def plot_time_vs_nodes(results: list[dict], *, out_name: str = "time_vs_nodes_by_algorithm.pdf"):
     
     SCRIPT_DIR = Path(__file__).resolve().parent          # .../TESI/test_functions
     REPO_ROOT  = SCRIPT_DIR.parent                        # .../TESI
@@ -804,18 +964,54 @@ def plot_time_vs_nodes(results: list[dict]):
     annotate_timeouts(yR_raw)
 
    
-    SCRIPT_DIR = Path(__file__).resolve().parent
-    REPO_ROOT  = SCRIPT_DIR.parent
-    SUMMARY_DIR = REPO_ROOT / "runtime_results" / "summarymode2"
-    SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
-
-    out = SUMMARY_DIR / "time_vs_nodes_by_algorithm.pdf"
+    out_dir = _summary_mode2_dir()   # usa helper sopra
+    out = out_dir / out_name
     fig.savefig(out, bbox_inches="tight", dpi=300)
     plt.close(fig)
 
     print(f"📈 Final plot saved to {out}")
 
 
+def plot_mode2_all_main_runs():
+    run_dirs = discover_run_dirs()
+    blocks = group_run_dirs(run_dirs, block_size=MODE2_BLOCK_SIZE)
+
+    if not blocks:
+        print("❌ No complete MODE2 blocks (4 runs) found in runtime_results/runs.")
+        return
+
+    for main_idx, blk in enumerate(blocks):
+        try:
+            results, results_pdcs = build_mode2_results_from_block(blk, main_run_idx=main_idx)
+            plot_time_vs_nodes(results, out_name=f"time_vs_nodes_by_algorithm_run{main_idx}.pdf")
+            plot_pdcs_vs_candidates_bar(results_pdcs, run_index=main_idx)
+        except Exception as e:
+            print(f"⚠️ Skipping MAIN RUN {main_idx}: {e}")
+
+def plot_mode2_final_boxplot(*, threshold_s: float = 1*60*60):
+    run_dirs = discover_run_dirs()
+    blocks = group_run_dirs(run_dirs, block_size=MODE2_BLOCK_SIZE)
+
+    all_results: list[dict] = []
+    for main_idx, blk in enumerate(blocks):
+        try:
+            results, _ = build_mode2_results_from_block(blk, main_run_idx=main_idx)
+            all_results.extend(results)
+        except Exception as e:
+            print(f"⚠️ Skipping block {main_idx}: {e}")
+
+    if not all_results:
+        print("❌ No valid data for boxplot.")
+        return
+
+    nodes_sorted = sorted({int(rr["nodes"]) for rr in all_results})
+    counts_per_node = [sum(1 for rr in all_results if int(rr["nodes"]) == n) for n in nodes_sorted]
+    runs_completed_per_topology = min(counts_per_node) if counts_per_node else 0
+
+    if runs_completed_per_topology >= 2:
+        plot_box_plot_time_vs_nodes(all_results, threshold_s=threshold_s)
+    else:
+        print(f"⚠️ Not enough MAIN RUNs per topology for boxplot (min={runs_completed_per_topology}).")
 
     
 
@@ -1042,7 +1238,7 @@ def plot_pdcs_vs_candidates_bar(run_results_pdcs: list[dict], run_index: int):
                 clip_on=False,
             )
 
-    ax.set_title("Number of PDCs vs Candidates (CC included)")
+    #ax.set_title("Number of PDCs vs Candidates (CC included)")
     ax.set_xlabel("Number of candidate nodes")
     ax.set_ylabel("Number of PDCs (including CC)")
     ax.set_xticks(x)
@@ -1063,7 +1259,7 @@ def plot_pdcs_vs_candidates_bar(run_results_pdcs: list[dict], run_index: int):
     plt.tight_layout()
 
     # Salvataggio in summarymode2
-    plots_dir = Path("runtime_results") / "summarymode2"
+    plots_dir = _summary_mode2_dir()
     plots_dir.mkdir(parents=True, exist_ok=True)
 
     out_path = plots_dir / f"pdcs_vs_candidates_run{run_index}.pdf"

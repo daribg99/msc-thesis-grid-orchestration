@@ -6,8 +6,8 @@ import shutil
 import subprocess
 import time
 import sys
-from test_functions.plotting import plot_time_vs_nodes,plot_box_plot_time_vs_nodes, plot_pdcs_vs_candidates_bar
-
+#from test_functions.plotting import plot_time_vs_nodes,plot_box_plot_time_vs_nodes, plot_pdcs_vs_candidates_bar
+from test_functions.plotting import plot_mode2_all_main_runs, plot_mode2_final_boxplot
 
 from pathlib import Path
 from typing import List, Tuple
@@ -634,101 +634,19 @@ def _read_snapshot_pdcs_count(snapshots_dir: Path, prefix: str) -> int:
 
 
 def run_mode_increasing_nodes(num_runs: int):
-    results: list[dict] = []
-    results_pdcs: list[dict] = []
-    skipped = 0
-
     sweep = list(zip(MODE2_CANDIDATES_SEQ, MODE2_PMUS_SEQ))
 
     for r in range(num_runs):
-        print("\n==============================")
-        print(f"🔁 MODE 2 | RUN {r+1}/{num_runs}")
-        print("==============================\n")
-
-        run_results: list[dict] = []
-
+        print(f"\n🔁 MODE 2 | MAIN RUN {r+1}/{num_runs}\n")
         for i, (num_candidates, num_pmus) in enumerate(sweep):
-            print("\n------------------------------")
-            print(
-                f"Step {i+1}/{len(sweep)} | "
-                f"candidates={num_candidates}, pmus={num_pmus} (+PMU8)"
-            )
-            print("------------------------------\n")
+            print(f"Step {i+1}/{len(sweep)} | candidates={num_candidates}, pmus={num_pmus} (+PMU8)")
+            run_one_size_no_changes(num_candidates=num_candidates, num_pmus=num_pmus)
 
-            try:
-                run_dir = run_one_size_no_changes(
-                    num_candidates=num_candidates,
-                    num_pmus=num_pmus,
-                )
+    # ora i plot si costruiscono leggendo runtime_results/runs
+    
+    plot_mode2_all_main_runs()
+    plot_mode2_final_boxplot(threshold_s=1*60*60)
 
-                runtime_csv = run_dir / "runtime.csv"
-                snapshots_dir = run_dir / "snapshots"
-
-                totals = parse_total_iteration_per_algo(runtime_csv)
-
-                nodes_total = 1 + num_candidates + num_pmus + 1  # CC + candidates + PMUs + PMU8
-
-                row = {
-                    "nodes": nodes_total,
-                    "candidates": num_candidates,
-                    "pmus": num_pmus + 1,  # includendo PMU8
-                    "Bruteforce": totals["Bruteforce"],
-                    "Greedy": totals["Greedy"],
-                    "Random": totals["Random"],
-                    "run": r,
-                    "run_dir": str(run_dir),
-                }
-
-                results.append(row)
-                run_results.append(row)
-                pdcs_counts = {
-                    "Bruteforce": _read_snapshot_pdcs_count(snapshots_dir, "snapshot_0000"),
-                    "Greedy": _read_snapshot_pdcs_count(snapshots_dir, "snapshot_0001"),
-                    "Random": _read_snapshot_pdcs_count(snapshots_dir, "snapshot_0002"),
-                }
-
-                row_pdcs = {
-                    "nodes": nodes_total,
-                    "candidates": num_candidates,
-                    "pmus": num_pmus + 1,  # includendo PMU8
-                    "Bruteforce": pdcs_counts["Bruteforce"],
-                    "Greedy": pdcs_counts["Greedy"],
-                    "Random": pdcs_counts["Random"],
-                    "run": r,
-                    "run_dir": str(run_dir),
-                }
-                results_pdcs.append(row_pdcs)
-            except Exception as e:
-                skipped += 1
-                print(f"⚠️ Skipping run-step (incomplete): {e}")
-
-            time.sleep(0.5)
-
-        # ✅ Line plot: SOLO se ho tutti e 4 i punti di questa run
-        if r == 0 and len(run_results) == len(sweep):
-            plot_time_vs_nodes(run_results)
-
-        # Bar plot #PDCs vs candidates (run 0, solo se run completa)
-        if r == 0:
-            run_results_pdcs = [rr for rr in results_pdcs if rr["run"] == r]
-            if len(run_results_pdcs) == len(sweep):
-                plot_pdcs_vs_candidates_bar(run_results_pdcs, r)
-
-
-    if not results:
-        print("❌ No valid runs to plot.")
-        return
-
-    if skipped:
-        print(f"ℹ️ Skipped steps: {skipped}")
-
-    # ✅ Boxplot solo se ho almeno 2 run COMPLETE per ogni topologia
-    nodes_sorted = sorted({int(rr["nodes"]) for rr in results})
-    counts_per_node = [sum(1 for rr in results if int(rr["nodes"]) == n) for n in nodes_sorted]
-    runs_completed_per_topology = min(counts_per_node) if counts_per_node else 0
-
-    if runs_completed_per_topology >= 2:
-        plot_box_plot_time_vs_nodes(results, threshold_s=1*60*60)
 
 
 
