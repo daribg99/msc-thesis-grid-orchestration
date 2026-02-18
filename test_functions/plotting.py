@@ -783,8 +783,10 @@ def plot_time_vs_nodes(results: list[dict]):
     y_anno = Y_MAX_VIS * 1.05
 
     def annotate_timeouts(y_raw):
+        already_annotated = False
+
         for xi, v in zip(x, y_raw):
-            if v >= THRESHOLD or not np.isfinite(v):
+            if not already_annotated and (v >= THRESHOLD or not np.isfinite(v)):
                 plt.annotate(
                     "Timeout ≥ 3h ↑",
                     (xi, y_anno),
@@ -794,6 +796,8 @@ def plot_time_vs_nodes(results: list[dict]):
                     color="0.25",
                     clip_on=False,
                 )
+                already_annotated = True
+
 
     annotate_timeouts(yB_raw)
     annotate_timeouts(yG_raw)
@@ -993,18 +997,39 @@ def plot_pdcs_vs_candidates_bar(run_results_pdcs: list[dict], run_index: int):
         xpos = x + offsets[j]
         vals = series[algo]
 
-        bars = ax.bar(
-            xpos,
-            vals,
-            width=width,
-            color=ALGO_COLORS_UNIFIED.get(algo, "0.8"),
-            edgecolor="black",
-            linewidth=0.8,
-        )
+        bars = []
+        for xi, val in zip(xpos, vals):
+
+            if val == 1:
+                # Timeout → niente barra
+                ax.text(
+                    xi,
+                    0.3,                  # altezza fissa bassa
+                    "Timeout",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                    rotation=90,
+                    color="red",
+                )
+                bars.append(None)
+            else:
+                bar = ax.bar(
+                    xi,
+                    val,
+                    width=width,
+                    color=ALGO_COLORS_UNIFIED.get(algo, "0.8"),
+                    edgecolor="black",
+                    linewidth=0.8,
+                )
+                bars.append(bar[0])
+
 
         # Lettera sopra ogni barra (B/G/R)
         letter = SHORT_LETTER.get(algo, "")
         for rect in bars:
+            if rect is None:
+                continue
             h = rect.get_height()
             ax.text(
                 rect.get_x() + rect.get_width() / 2.0,
