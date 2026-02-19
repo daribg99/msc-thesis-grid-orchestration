@@ -7,7 +7,7 @@ import subprocess
 import time
 import sys
 #from test_functions.plotting import plot_time_vs_nodes,plot_box_plot_time_vs_nodes, plot_pdcs_vs_candidates_bar
-from test_functions.plotting import plot_mode2_all_main_runs, plot_mode2_final_boxplot
+from test_functions.plotting import plot_mode2_all_plots
 
 from pathlib import Path
 from typing import List, Tuple
@@ -645,7 +645,7 @@ def run_mode_increasing_nodes(num_runs: int):
     # ora i plot si costruiscono leggendo runtime_results/runs
     
     plot_mode2_all_main_runs()
-    plot_mode2_final_boxplot(threshold_s=1*60*60)
+    plot_mode2_all_plots(threshold_s=1*60*60, timeout_value_pdcs=1)
 
 
 
