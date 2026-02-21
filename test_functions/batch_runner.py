@@ -290,10 +290,10 @@ def run_one_main_run(
             r"Do you want to modify the status of an edge\? \(y/n\):\s*",# 2
             r"Do you want to modify a bandwidth\? \(y/n\):\s*",          # 3
             r"Enter your choice \(1-6\):\s*",                            # 4
-            r"Enable cluster splitting\? \(y/n\):\s*",                   # 5
-            r"Enter maximum latency.*:\s*",                              # 6
+            r"Enable cluster splitting\?.*\s*",                   # 5
+            r"Enter maximum latency.*\s*",                              # 6
             r"Enter seed \(default=42\):\s*",                            # 7
-            r"Repeat the process\? \(y/n\):\s*",                         # 8
+            r"Repeat the process\?.*\s*",                         # 8
             pexpect.EOF,                                                 # 9
         ])
 
@@ -525,10 +525,10 @@ def run_one_size_no_changes(*, num_candidates: int, num_pmus: int):
             r"Do you want to modify the status of an edge\? \(y/n\):\s*",      # 2
             r"Do you want to modify a bandwidth\? \(y/n\):\s*",                # 3
             r"Enter your choice \(1-6\):\s*",                                  # 4
-            r"Enable cluster splitting\? \(y/n\):\s*",                         # 5
-            r"Enter maximum latency.*:\s*",                                    # 6
+            r"Enable cluster splitting\?.*\s*",                         # 5
+            r"Enter maximum latency.*\s*",                                    # 6
             r"Enter seed \(default=42\):\s*",                                  # 7
-            r"Repeat the process\? \(y/n\):\s*",                               # 8
+            r"Repeat the process\?.*\s*",                               # 8
             pexpect.EOF,                                                       # 9
         ])
 
@@ -644,7 +644,6 @@ def run_mode_increasing_nodes(num_runs: int):
 
     # ora i plot si costruiscono leggendo runtime_results/runs
     
-    plot_mode2_all_main_runs()
     plot_mode2_all_plots(threshold_s=1*60*60, timeout_value_pdcs=1)
 
 

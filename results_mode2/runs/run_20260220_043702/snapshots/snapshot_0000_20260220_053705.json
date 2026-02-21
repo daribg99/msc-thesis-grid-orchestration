@@ -1,0 +1,9 @@
+{
+    "path": {},
+    "pdcs": [
+        "CC"
+    ],
+    "max_latency": 80,
+    "ops_applied": [],
+    "topology_seed": null
+}

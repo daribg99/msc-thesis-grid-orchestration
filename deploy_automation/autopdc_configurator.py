@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-import subprocess
-import sys
-import signal
 import os
+import sys
 import time
-import json
+import signal
+import subprocess
 from datetime import datetime
 from pathlib import Path
+from dataclasses import dataclass
+from typing import Optional, Tuple
 
 from modelling_algorithms.modules.graph_model import (
     create_graph,
@@ -19,9 +20,9 @@ from modelling_algorithms.modules.placement_pdc import (
     place_pdcs_greedy,
     place_pdcs_random,
     place_pdcs_bruteforce,
-    q_learning_placement,
+    q_learning_placement,          # unused for now
 )
-from modelling_algorithms.modules.gnn import train_with_policy_gradient
+from modelling_algorithms.modules.gnn import train_with_policy_gradient  # unused for now
 
 from test_functions.delay_applicator import apply_delay
 from test_functions.snapshot import save_snapshot
@@ -31,13 +32,16 @@ from test_functions.metrics import (
     jaccard_distance,
     append_metrics_csv,
 )
-from test_functions.plotting import plot_pdc_topology_jaccard, plot_runtime_stacked_per_iteration, plot_total_iteration_boxplot_by_T, plot_jaccard_boxplot_by_T
-
+from test_functions.plotting import (
+    plot_jaccard_singlerun,
+    plot_runtime_singlerun,
+    plot_runtime_boxplot,
+    plot_jaccard_boxplot,
+)
 
 # ================== Paths ==================
-
-SCRIPT_DIR = Path(__file__).resolve().parent          # .../TESI/deploy_automation
-REPO_ROOT  = SCRIPT_DIR.parent                        # .../TESI
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT  = SCRIPT_DIR.parent
 
 DEPLOY_DIR    = REPO_ROOT / "deploy_automation"
 RUNTIME_ROOT  = REPO_ROOT / "runtime_results"
@@ -46,9 +50,11 @@ RUNS_DIR      = RUNTIME_ROOT / "runs"
 DEPLOYER_SH   = DEPLOY_DIR / "deployer.sh"
 APPLIER_PY    = DEPLOY_DIR / "applier.py"
 
-# ================== Utility Functions ==================
 
-def run_command(cmd, cwd=None):
+# ================== Utilities ==================
+
+def run_command(cmd: list[str], cwd: Optional[str] = None) -> int:
+    """Run a command streaming stdout+stderr to console."""
     process = subprocess.Popen(
         cmd,
         cwd=cwd,
@@ -57,6 +63,7 @@ def run_command(cmd, cwd=None):
         text=True,
         bufsize=1,
     )
+    assert process.stdout is not None
     for line in process.stdout:
         print(line, end="")
     process.wait()
@@ -69,73 +76,96 @@ def format_hms(seconds: float) -> str:
     secs = seconds % 60
     if hours > 0:
         return f"{hours}h {minutes}m {secs:05.2f}s"
-    elif minutes > 0:
+    if minutes > 0:
         return f"{minutes}m {secs:05.2f}s"
-    else:
-        return f"{secs*1000:.2f} ms"
+    return f"{secs * 1000:.2f} ms"
 
 
-def write_runtime(label: str, seconds: float, runtime_file: Path):
-    """
-    Append a runtime entry to the runtime_file of the current run.
-    """
-    formatted = format_hms(seconds)
+def write_runtime(runtime_file: Path, label: str, seconds: float) -> None:
     with open(runtime_file, "a") as f:
-        f.write(f"{label:<20} {formatted}\n")
+        f.write(f"{label:<20} {format_hms(seconds)}\n")
+
+
+@dataclass(frozen=True)
+class PlacementResult:
+    pdcs: set
+    paths: list
+    max_latency: int
+    alg_label: str
+
+
+def prompt_yes_no(msg: str, default: bool = False) -> bool:
+    suffix = " [Y/n] " if default else " [y/N] "
+    ans = input(msg + suffix).strip().lower()
+    if not ans:
+        return default
+    return ans in ("y", "yes")
+
+
+def prompt_int(msg: str, default: Optional[int] = None) -> int:
+    while True:
+        raw = input(f"{msg}" + (f" (default={default}): " if default is not None else ": ")).strip()
+        if not raw and default is not None:
+            return default
+        try:
+            return int(raw)
+        except ValueError:
+            print("Invalid integer, try again.")
 
 
 # ================== Placement Logic ==================
 
-def choose_algorithm(G, runtime_file: Path):
-    print("\n📘 Choose a placement algorithm:")
-    print("1. Bruteforce")
-    print("2. Greedy")
-    print("3. Random")
-    print("4. Q-Learning (not available yet)")
-    print("5. GNN + Policy Gradient (not available yet)")
-    print("6. Exit")
+def choose_algorithm(G, runtime_file: Path) -> PlacementResult:
+    menu = (
+        "\n📘 Choose a placement algorithm:\n"
+        "1. Bruteforce\n"
+        "2. Greedy\n"
+        "3. Random\n"
+        "4. Q-Learning (not available yet)\n"
+        "5. GNN + Policy Gradient (not available yet)\n"
+        "6. Exit\n"
+    )
 
-    choice = input("Enter your choice (1-6): ")
-    if choice == "6":
-        print("Exiting...")
-        sys.exit(0)
+    while True:
+        print(menu)
+        choice = input("Enter your choice (1-6): ").strip()
 
-    if choice in ("4", "5"):
-        print("⚠️ This algorithm is not available yet. Please choose another one.")
-        return choose_algorithm(G, runtime_file)
+        if choice == "6":
+            print("Exiting...")
+            sys.exit(0)
 
-    if choice not in ("1", "2", "3"):
-        print("Invalid choice. Please try again.")
-        return choose_algorithm(G, runtime_file)
+        if choice in ("4", "5"):
+            print("⚠️ This algorithm is not available yet. Please choose another one.")
+            continue
 
-    flag_splitting = input("Enable cluster splitting? (y/n): ").lower() == "y"
-    max_latency = int(input("Enter maximum latency (ms): "))
+        if choice not in ("1", "2", "3"):
+            print("Invalid choice. Please try again.")
+            continue
 
-    start = time.perf_counter()
+        flag_splitting = prompt_yes_no("Enable cluster splitting?", default=False)
+        max_latency = prompt_int("Enter maximum latency (ms)")
 
-    if choice == "1":
-        result = place_pdcs_bruteforce(G, max_latency, flag_splitting)
-        label = "Placement-Bruteforce"
-    elif choice == "2":
-        result = place_pdcs_greedy(G, max_latency, flag_splitting)
-        label = "Placement-Greedy"
-    elif choice == "3":
-        seed = int(input("Enter seed (default=42): ") or 42)
-        result = place_pdcs_random(G, max_latency, seed, flag_splitting)
-        label = "Placement-Random"
-    else:
-        # unreachable due to checks, but keep safe
-        print("Invalid choice.")
-        return choose_algorithm(G, runtime_file)
+        start = time.perf_counter()
 
-    elapsed = time.perf_counter() - start
-    write_runtime(label, elapsed, runtime_file)
-    print(f"⏱️ {label} time (algorithm only): {format_hms(elapsed)}")
+        if choice == "1":
+            pdcs, paths, Lmax = place_pdcs_bruteforce(G, max_latency, flag_splitting)
+            label = "Placement-Bruteforce"
+        elif choice == "2":
+            pdcs, paths, Lmax = place_pdcs_greedy(G, max_latency, flag_splitting)
+            label = "Placement-Greedy"
+        else:  # "3"
+            seed = prompt_int("Enter seed", default=42)
+            pdcs, paths, Lmax = place_pdcs_random(G, max_latency, seed, flag_splitting)
+            label = "Placement-Random"
 
-    return (*result, label)
+        elapsed = time.perf_counter() - start
+        write_runtime(runtime_file, label, elapsed)
+        print(f"⏱️ {label} time (algorithm only): {format_hms(elapsed)}")
+
+        return PlacementResult(pdcs=set(pdcs), paths=paths, max_latency=Lmax, alg_label=label)
 
 
-# ================== Main Loop ==================
+# ================== Main ==================
 
 def main(
     *,
@@ -149,20 +179,18 @@ def main(
     cc_min_links: int = 2,
     cc_max_links: int | None = None,
     pmu_links: int = 1,
-):
-    # --- Create a new run directory to keep history across executions ---
+) -> None:
     os.makedirs(RUNS_DIR, exist_ok=True)
     run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
-    RUN_DIR = RUNS_DIR / run_id
+    run_dir = RUNS_DIR / run_id
 
-    snapshots_dir = RUN_DIR / "snapshots"
-    plots_dir     = RUN_DIR / "plots"
+    snapshots_dir = run_dir / "snapshots"
+    plots_dir     = run_dir / "plots"
     os.makedirs(snapshots_dir, exist_ok=True)
     os.makedirs(plots_dir, exist_ok=True)
 
-    metrics_csv  = RUN_DIR / "topology_change.csv"
-    runtime_file = RUN_DIR / "runtime.csv"
-    
+    metrics_csv  = run_dir / "topology_change.csv"
+    runtime_file = run_dir / "runtime.csv"
 
     with open(runtime_file, "w") as f:
         f.write("=== Runtime summary ===\n")
@@ -171,16 +199,15 @@ def main(
         print("🧪 DEBUG MODE: deployer/applier will be skipped.")
     if skip_delay:
         print("🧪 DEBUG MODE: delay application will be skipped.")
-    print(f"📁 Run directory: {RUN_DIR}")
+    print(f"📁 Run directory: {run_dir}")
 
-    # --- topology monitoring state ---
-    iteration = 0
-    prev_pdcs = None
-    current_alg = None
-    prev_pdcs_block = None
+    # --- block metrics state (per algorithm) ---
+    current_alg: Optional[str] = None
+    prev_pdcs_block: Optional[set] = None
     block_T = 0
 
-    
+    iteration = 0
+
     print("🌐 Creating initial graph...\n")
     G = create_graph(
         num_candidates=num_candidates,
@@ -193,55 +220,41 @@ def main(
     )
     draw_graph(G, output_path=plots_dir / "graph_initial.png")
 
-
     while True:
         print("\n🔄 Updating network conditions...")
-        
         lat_ops = modify_latency(G)
         st_ops  = modify_edge_status(G)
         bw_ops  = modify_bandwidth(G)
         ops_applied = lat_ops + st_ops + bw_ops
 
-
         print("\n⚙️ Running placement algorithm...")
-
         total_start = time.perf_counter()
 
-        pdcs, path, max_latency, alg_name = choose_algorithm(G, runtime_file)
-        print(f"✅ PDCs assigned in clusters: {', '.join(pdcs)}, CC")
+        placement = choose_algorithm(G, runtime_file)
+        print(f"✅ PDCs assigned in clusters: {', '.join(sorted(placement.pdcs))}, CC")
 
-        # Draw updated graph (your draw_graph likely saves under runtime_results;
-        # if you want it under RUN_DIR, extend draw_graph with an output_dir arg)
         graph_out = plots_dir / f"graph_T{iteration:03d}.png"
-        draw_graph(G, pdcs=pdcs, paths=path, max_latency=max_latency, output_path=graph_out)
+        draw_graph(G, pdcs=placement.pdcs, paths=placement.paths, max_latency=placement.max_latency, output_path=graph_out)
         print(f"🖼️ Graph saved to {graph_out}")
 
-
-        # Build output dict once
         data = {
-            "path": path,
-            "pdcs": sorted(list(pdcs)) + ["CC"],
-            "max_latency": max_latency,
+            "path": placement.paths,
+            "pdcs": sorted(list(placement.pdcs)) + ["CC"],
+            "max_latency": placement.max_latency,
             "ops_applied": ops_applied,
-            # opzionale ma utile per replay “fair”
             "topology_seed": seed,
         }
 
-
-
-        # --- Save snapshot for this iteration ---
         snap_path = save_snapshot(iteration, data, snapshots_dir)
         print(f"🧾 Snapshot saved to {snap_path}")
 
-        # --- Compute topology-change metrics (PDC set) ---
-        # --- Compute topology-change metrics (PDC set), with blocks per algorithm ---
+        # --- metrics: block per algorithm ---
         curr_pdcs = pdcs_set(data, exclude_cc=True)
 
-        if current_alg != alg_name:
-            current_alg = alg_name
+        if current_alg != placement.alg_label:
+            current_alg = placement.alg_label
             prev_pdcs_block = curr_pdcs
             block_T = 0
-
             append_metrics_csv(
                 metrics_csv,
                 block_T,
@@ -249,12 +262,13 @@ def main(
                 0.0,
                 0,
                 0,
-                algorithm=alg_name,
-                note=f"first iteration for {alg_name}",
+                algorithm=current_alg,
+                note=f"first iteration for {current_alg}",
             )
         else:
+            assert prev_pdcs_block is not None
             block_T += 1
-            c = churn(prev_pdcs_block, curr_pdcs)
+            c = churn(prev_pdcs_block, curr_pdcs) # not used
             jd = jaccard_distance(prev_pdcs_block, curr_pdcs)
             added = len(curr_pdcs - prev_pdcs_block)
             removed = len(prev_pdcs_block - curr_pdcs)
@@ -266,62 +280,54 @@ def main(
                 jd,
                 added,
                 removed,
-                algorithm=alg_name,
+                algorithm=current_alg,
                 note="",
             )
-
             prev_pdcs_block = curr_pdcs
-
 
         iteration += 1
 
-
-        # --- Run deployer and applier ---
+        # --- deployer + applier ---
         if not skip_deploy:
             steps = [
                 (["bash", str(DEPLOYER_SH), str(snap_path)], "Deployer"),
                 (["python3", "-u", str(APPLIER_PY), str(snap_path)], "Applier"),
             ]
-
             for cmd, label in steps:
                 print(f"\n🚀 Executing {label}: {' '.join(cmd)}\n")
                 start = time.perf_counter()
                 code = run_command(cmd, cwd=str(REPO_ROOT))
-                end = time.perf_counter()
-                elapsed = end - start
-                write_runtime(label, elapsed, runtime_file)
+                elapsed = time.perf_counter() - start
+                write_runtime(runtime_file, label, elapsed)
 
                 if code != 0:
                     print(f"❌ {label} failed with exit code {code}. Aborting this iteration.")
                     break
-
                 print(f"✅ {label} completed successfully!")
 
         total_elapsed = time.perf_counter() - total_start
-        write_runtime("Total Iteration", total_elapsed, runtime_file)
+        write_runtime(runtime_file, "Total Iteration", total_elapsed)
         print(f"\n🕒 Total iteration time: {format_hms(total_elapsed)}")
 
-        # --- Apply network delays ---
+        # --- delay application ---
         if not skip_delay:
             print("🧪 TESTING MODE: applying delay.")
             apply_delay(G, str(snap_path))
         else:
             print("🧪 DEPLOY MODE: skipping delay application.")
 
-        # Ask if user wants to continue
-        cont = input("\n🔁 Repeat the process? (y/n): ").lower()
-        if cont != "y":
+        if not prompt_yes_no("\n🔁 Repeat the process?", default=False):
             print("👋 Exiting loop.")
 
-            # --- Plots for THIS run ---
+            # --- Plots for THIS run (indipendente dal deploy) ---
             if not skip_deploy:
                 if metrics_csv.exists():
-                    plot_pdc_topology_jaccard(metrics_csv, output_dir=plots_dir)
-                    plot_jaccard_boxplot_by_T(RUNS_DIR, output_dir=RUNTIME_ROOT)
+                    plot_jaccard_singlerun(metrics_csv, output_dir=plots_dir)
+                    plot_jaccard_boxplot(RUNS_DIR, output_dir=RUNTIME_ROOT)
 
                 if runtime_file.exists():
-                    plot_runtime_stacked_per_iteration(runtime_file, output_dir=plots_dir)
-                    plot_total_iteration_boxplot_by_T(RUNS_DIR, output_dir=RUNTIME_ROOT)
+                    plot_runtime_singlerun(runtime_file, output_dir=plots_dir)
+                    plot_runtime_boxplot(RUNS_DIR, output_dir=RUNTIME_ROOT)
 
             break
 
