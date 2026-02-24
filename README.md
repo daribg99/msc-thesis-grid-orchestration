@@ -14,7 +14,7 @@ Folders content:
 - `runtime_results/`: storage for runtime results of experiments
 - `test_functions/`: functions for testing and evaluating the algorithms, including delay applicator and plotting functions
 
-# Important Notes: 
+# Configuration setup 
 if you want to try one of the follwing sections, you need to follow the instructions below.
 Follow this guide (paragraph advanced installation guide) in order to install the Operator [click here](https://docs.percona.com/legacy-documentation/percona-operator-for-mysql-pxc/percona-kubernetes-operator-for-pxc-1.11.0.pdf). NOTE: See the next instructions for the necessary adjustments.
 Clone the repository, and follow the following steps:
@@ -45,26 +45,25 @@ spec:
       targetPort: 3306
       nodePort: 30950   
 ```
-You don't have to apply any files, the scripts that you launch will do everything for you.
-Finally, go to the deployer.sh script, and change the line:
-```bash
-PERCONA_DIR="/your/path/with/percona-xtradb-cluster-operator"
-```
-based on your path where you cloned the Percona repository.
+You do not need to manually apply any Kubernetes manifests.
+All required resources will be deployed automatically by the provided scripts.
 
-This was necessary because the folder "Percona" cannot be added to the repository because it contains third-party dependencies and configuration files that may include secrets, which are not allowed in the repository.
+Before running the deployer, copy the .env.example file and rename it to `.env`. Then edit the .env file and set the correct PERCONA_ROOT path on your machine.
+
+This step is required because the percona-xtradb-cluster-operator directory is not included in the repository.
+It contains third-party dependencies and configuration files that may include sensitive information, which cannot be committed to the repository.
+
 
 Then, launch:
 ```bash
 docker network create mc-net
 ```
 to create the network that contains the k3d clusters. 
+
 Now you are ready to try the deployment.
 
+From the project root directory, it is recommended to create and activate a Python virtual environment to ensure dependency isolation and reproducibility:
 
-# If you want to try entire setup ( algorithms + deployment )...
-- make sure kubeconfigs folders is empty ( only for the first time )
-- Run, in the root folder
 ```bash
 python3 -m venv .venv
 
@@ -72,7 +71,10 @@ source .venv/bin/activate
 
 python -m pip install -r requirements.txt
 ```
-- Finally, in the root folder run
+This guarantees that all required dependencies are installed locally without affecting your system-wide Python environment.
+
+Finally:
+
 ```bash
 python -m deploy_automation.autopdc_configurator
 ```
@@ -123,3 +125,4 @@ The script accept the following arguments:
 ---
 
 Note: you need docker and k3d installed. As said before, this is a work in progress, so some parts of the code may not work as expected.
+To run the tests, navigate to the `tests_functions` directory and follow the instructions provided in the corresponding file.

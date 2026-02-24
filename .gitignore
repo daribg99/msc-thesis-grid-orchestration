@@ -16,3 +16,6 @@ runtime_results/
 #results_mode*/
 # Kubeconfigs generated
 deploy_automation/kubeconfigs*
+
+# Variables
+.env 

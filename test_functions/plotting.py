@@ -559,7 +559,7 @@ def plot_jaccard_boxplot(
     fig.subplots_adjust(top=0.88, bottom=0.14)
 
     out = (
-    output_dir / "summarymode1" / "plot_jaccard_boxplot.pdf"
+    output_dir / "summarymode1" / "jaccard_boxplot.pdf"
     if output_dir is not None
     else None
     )
@@ -864,7 +864,7 @@ def plot_runtime_boxplot(
 
 
     ax.set_title(
-        f"Distribution of Algorithm Runtime vs Topology Change (n = {len(valid_runs)} runs)",
+        f"Distribution of Total Runtime vs Topology Change (n = {len(valid_runs)} runs)",
         fontsize=12,
         pad=14,
     )

@@ -57,7 +57,7 @@ def build_cmd(
     pmu_links=1,
 ):
     cmd = [
-        "python3", "-u", "-m", "deploy_automation.autopdc_configurator"
+        "python3", "-u", "-m", "deploy_automation.autopdc_configurator", "--plots"
     ]
 
     if not skip_deploy:

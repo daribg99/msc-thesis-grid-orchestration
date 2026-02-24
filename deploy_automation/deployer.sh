@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # .../TESI/deploy_automation
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -22,6 +24,16 @@ FLAG:
   -h, --help   Show this message and exit.
 EOF
 }
+
+# --- optional .env loading (not committed) ---
+ENV_FILE="${ENV_FILE:-$REPO_ROOT/.env}"
+if [ -f "$ENV_FILE" ]; then
+  # export all vars defined in .env
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
 
 # --- args / help ---
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -368,7 +380,8 @@ done
 echo
 
 # --- Creation (only once) of the cluster-db ---
-DB_CLUSTER="cluster-db"
+DB_CLUSTER="${DB_CLUSTER:-cluster-db}"
+
 echo "🏗️  Ensuring k3d cluster '$DB_CLUSTER' exists (DB cluster)..."
 CLUSTER_DB_EXISTS=0
 if printf '%s\n' "${EXISTING_CLUSTERS[@]}" | grep -qx "$DB_CLUSTER"; then
@@ -429,7 +442,8 @@ echo
 echo "🏗️  Setup Percona XtraDB sul cluster DB ('$DB_CLUSTER')..."
 
 #PERCONA_DIR="$REPO_ROOT/percona-xtradb-cluster-operator/deploy"
-PERCONA_DIR="$HOME/THESIS/percona-xtradb-cluster-operator/deploy"
+PERCONA_ROOT="${PERCONA_ROOT:-$HOME/THESIS/percona-xtradb-cluster-operator}"
+PERCONA_DIR="$PERCONA_ROOT/deploy"
 
 if [ ! -d "$PERCONA_DIR" ]; then
   echo "❌ Percona directory not found: $PERCONA_DIR" >&2
@@ -490,7 +504,8 @@ WORKLOAD_NAME=()
 
 # --- Deploy openPDC on each cluster (except DB) ---
 NAMESPACE="lower"
-RAW_PDC_URL="https://raw.githubusercontent.com/daribg99/TESI/refs/heads/complete_deploy/deploy/openpdc.yaml"
+RAW_PDC_URL="${RAW_PDC_URL:-https://raw.githubusercontent.com/daribg99/msc-thesis-grid-orchestration/refs/heads/complete_deploy/deploy/openpdc.yaml}"
+
 if ! curl -fsI "$RAW_PDC_URL" >/dev/null; then
   echo "❌ Manifest unreachable (404?): $RAW_PDC_URL" >&2
   echo "👉 Open the link in your browser and use the 'Raw' button to copy the correct URL." >&2

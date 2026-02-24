@@ -179,6 +179,7 @@ def main(
     cc_min_links: int = 2,
     cc_max_links: int | None = None,
     pmu_links: int = 1,
+    plots: bool = False,
 ) -> None:
     os.makedirs(RUNS_DIR, exist_ok=True)
     run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
@@ -320,7 +321,7 @@ def main(
             print("👋 Exiting loop.")
 
             # --- Plots for THIS run (indipendente dal deploy) ---
-            if not skip_deploy:
+            if ( not skip_deploy ) and plots:
                 if metrics_csv.exists():
                     plot_jaccard_singlerun(metrics_csv, output_dir=plots_dir)
                     plot_jaccard_boxplot(RUNS_DIR, output_dir=RUNTIME_ROOT)
@@ -347,6 +348,7 @@ def parse_args():
     p.add_argument("--cc-min-links", type=int, default=2)
     p.add_argument("--cc-max-links", type=int, default=None)
     p.add_argument("--pmu-links", type=int, default=1)
+    p.add_argument("--plots", action="store_true", default=False, help="Generate plots at the end of the run (used by batch runner).")
     return p.parse_args()
 
 
@@ -364,4 +366,5 @@ if __name__ == "__main__":
         cc_min_links=args.cc_min_links,
         cc_max_links=args.cc_max_links,
         pmu_links=args.pmu_links,
+        plots=args.plots,
     )
