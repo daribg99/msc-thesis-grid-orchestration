@@ -7,7 +7,7 @@ import subprocess
 import time
 import sys
 #from test_functions.plotting import plot_time_vs_nodes,plot_box_plot_time_vs_nodes, plot_pdcs_vs_candidates_bar
-from test_functions.plotting import plot_mode2_all_plots
+from test_functions.plotting import plot_mode2_all_plots, plot_mode1_all_plots
 
 from pathlib import Path
 from typing import List, Tuple
@@ -32,7 +32,7 @@ STATUS_CHOICES = ["down"]
 
 # ---- Mode 2 sweep (FIXED, no input) ----
 MODE2_CANDIDATES_SEQ = [10, 20, 30, 40]
-MODE2_PMUS_SEQ       = [0,1, 2, 3]   # PMU8 viene aggiunta internamente
+MODE2_PMUS_SEQ       = [1, 2, 3, 4]   
 
 MODE2_P_EXTRA = 0.45
 MODE2_CC_MIN_LINKS = 2
@@ -49,7 +49,7 @@ def build_cmd(
     skip_deploy=True,
     skip_delay=True,
     num_candidates=8,
-    num_pmus=3,
+    num_pmus=4,
     seed=None,
     p_extra=0.35,
     cc_min_links=2,
@@ -57,7 +57,7 @@ def build_cmd(
     pmu_links=1,
 ):
     cmd = [
-        "python3", "-u", "-m", "deploy_automation.autopdc_configurator", "--plots"
+        "python3", "-u", "-m", "deploy_automation.autopdc_configurator"
     ]
 
     if not skip_deploy:
@@ -211,19 +211,14 @@ def _load_ops_applied(run_dir: Path, it: int) -> list[dict]:
 
 
 def build_undo_last_T(run_dir: Path, last_done_iter: int) -> list[dict]:
-    """
-    Ora fa UNDO delle ultime (TS_PER_RUN - 1) iterazioni completate.
-    T0 non ha modifiche, quindi si annullano T1..T_{TS_PER_RUN-1}.
-    last_done_iter = ultima iterazione COMPLETATA (es: dopo T4 => last_done_iter=4)
-    """
     k = TS_PER_RUN - 1
     if last_done_iter <= 0 or k <= 0:
         return []
 
-    # carica ops_applied dagli snapshot: [last_done_iter, last_done_iter-1, ..., last_done_iter-(k-1)]
+    # loaded ops from snapshot: [last_done_iter, last_done_iter-1, ..., last_done_iter-(k-1)]
     start_it = last_done_iter - (k - 1)
     if start_it < 1:
-        start_it = 1  # evita it=0 che di solito è T0 senza modifiche
+        start_it = 1  # T0 has not modification
 
     ops: list[dict] = []
     for it in range(start_it, last_done_iter + 1):
@@ -236,7 +231,7 @@ def build_undo_last_T(run_dir: Path, last_done_iter: int) -> list[dict]:
                 "type": op["type"],   # latency/status/bandwidth
                 "u": op["u"],
                 "v": op["v"],
-                "value": op["before"],  # ripristina il valore precedente
+                "value": op["before"],  
             })
         except Exception:
             continue
@@ -249,12 +244,12 @@ def run_one_main_run(
     skip_deploy=True,
     skip_delay=True,
     num_candidates=8,
-    num_pmus=3,
+    num_pmus=4,
     seed=None,
     p_extra=0.35,
     pmu_links=1,
 ):
-    global_iter = 0   # segue l'iteration del configurator (T0, T1, T2, ...)
+    global_iter = 0   
 
     cmd = build_cmd(
         skip_deploy=skip_deploy,
@@ -278,27 +273,27 @@ def run_one_main_run(
 
     T = 0
     algo_idx = 0
-    pending_ops: List[dict] = []  # a T0: vuoto (no changes)
+    pending_ops: List[dict] = []  
 
     def send(line: str):
         child.sendline(line)
 
     while True:
         idx = child.expect([
-            r"📁 Run directory: [^\r\n]+\r?\n",                               # 0
+            r"📁 Run directory: [^\r\n]+\r?\n",                         # 0
             r"Do you want to modify a latency\? \(y/n\):\s*",            # 1
             r"Do you want to modify the status of an edge\? \(y/n\):\s*",# 2
             r"Do you want to modify a bandwidth\? \(y/n\):\s*",          # 3
             r"Enter your choice \(1-6\):\s*",                            # 4
-            r"Enable cluster splitting\?.*\s*",                   # 5
+            r"Enable cluster splitting\?.*\s*",                          # 5
             r"Enter maximum latency.*\s*",                              # 6
             r"Enter seed \(default=42\):\s*",                            # 7
-            r"Repeat the process\?.*\s*",                         # 8
+            r"Repeat the process\?.*\s*",                                # 8
             pexpect.EOF,                                                 # 9
         ])
 
         if idx == 0:
-            # child.after contiene la riga matchata da expect (Run directory ...)
+            # child.after contains the matched line
             line = child.after.strip()
 
             marker = "Run directory:"
@@ -361,7 +356,7 @@ def run_one_main_run(
                 send("n")
             continue
 
-        if idx == 4:  # choice (algoritmo)
+        if idx == 4:  # choice (algorithm)
             print(f"\n🧠 Starting ALG={ALGORITHMS[algo_idx]} at T={T}\n")
             send(ALGORITHMS[algo_idx])
             continue
@@ -374,25 +369,25 @@ def run_one_main_run(
             send(MAX_LATENCY)
             continue
 
-        if idx == 7:  # seed (solo per Random)
+        if idx == 7:  # seed 
             if ALGORITHMS[algo_idx] == "3":
-                send("")  # invio vuoto -> default 42
+                send("")  # empty -> default 42
             else:
                 send("")  # safe
             continue
 
         if idx == 8:  # repeat
-            # ✅ abbiamo finito UNA iterazione globale
+            # Finish one global iteration
             global_iter += 1
 
-            # abbiamo finito un T per l'algoritmo corrente
+            # Finish one T of the current algorithm
             T += 1
 
             if T < TS_PER_RUN:
-                # pianifica cambi per il prossimo T basandoti sullo snapshot appena scritto
+                # Changes for next T
                 if run_dir is not None:
                     edges = []
-                    for _ in range(10):  # ~2 secondi
+                    for _ in range(10):  # ~2 sec
                         edges = latest_snapshot_edges(run_dir)
                         if edges:
                             break
@@ -405,16 +400,14 @@ def run_one_main_run(
                 send("y")
                 continue
 
-            # finiti T0,T1,T2 per questo algoritmo -> passa al prossimo
+            # next algorithm
             algo_idx += 1
 
 
             if algo_idx < len(ALGORITHMS):
                 undo_ops: List[dict] = []
 
-                # ✅ UNDO delle ultime (TS_PER_RUN - 1) iterazioni dell’algoritmo appena finito (T1..T_{TS_PER_RUN-1})
-                # global_iter è il contatore "globale" del configurator:
-                # dopo T2 completato, global_iter == 3, quindi last_done = 2
+                # undo
                 if run_dir is not None and global_iter >= 2:
                     last_done = global_iter - 1
                     undo_ops = build_undo_last_T(run_dir, last_done)
@@ -424,14 +417,13 @@ def run_one_main_run(
 
                 cleanup()
 
-                # ✅ riparti con lo stesso processo configurator, ma prima applichi UNDO via prompt
+                # Reset run_dir and T for the next algorithm
                 T = 0
                 pending_ops = undo_ops
                 print(f"\n➡️ Switching to ALG={ALGORITHMS[algo_idx]} (reset T=0)\n")
                 send("y")
                 continue
 
-            # finiti tutti gli algoritmi
             send("n")
             continue
 
@@ -446,18 +438,7 @@ def run_one_main_run(
 # ---------------- RUN MODE 2 ----------------
 
 def parse_total_iteration_per_algo(runtime_csv: Path) -> dict[str, float]:
-    """
-    Ritorna secondi per ciascun algoritmo, usando il tempo sulla riga Placement-*.
-
-    Atteso:
-      Placement-Bruteforce <tempo>
-      Placement-Greedy <tempo>
-      Placement-Random <tempo>
-
-    Esempi di riga:
-      Placement-Greedy 1234 ms
-      Placement-Random 1.23 s
-    """
+   
     placement_re = re.compile(
         r"^Placement-(Greedy|Bruteforce|Random)\s+(.+?)\s*$",
         re.IGNORECASE
@@ -471,7 +452,6 @@ def parse_total_iteration_per_algo(runtime_csv: Path) -> dict[str, float]:
             if not line or line.startswith("==="):
                 continue
 
-            # normalizza NBSP e spazi multipli
             line = line.replace("\u00a0", " ")
             line = " ".join(line.split())
 
@@ -481,9 +461,9 @@ def parse_total_iteration_per_algo(runtime_csv: Path) -> dict[str, float]:
 
             algo = m.group(1).capitalize()
             if algo in totals_ms:
-                continue  # se appare due volte, tieni la prima (puoi cambiarlo)
+                continue  
 
-            time_str = m.group(2)  # la parte dopo Placement-...
+            time_str = m.group(2)  
             ms = _parse_time_to_ms(time_str)
             if ms is not None:
                 totals_ms[algo] = ms
@@ -540,34 +520,31 @@ def run_one_size_no_changes(*, num_candidates: int, num_pmus: int):
                 print(f"[DEBUG] run_dir set to: {run_dir}")
             continue
 
-        # ✅ sempre "n" alle modifiche
         if idx in (1, 2, 3):
             send("n")
             continue
 
-        if idx == 4:  # scelta algoritmo
-            send(ALGORITHMS[algo_idx])  # "1","2","3"
+        if idx == 4:  
+            send(ALGORITHMS[algo_idx])  
             continue
 
         if idx == 5:  # splitting
-            send(SPLITTING)  # "n"
+            send(SPLITTING)  
             continue
 
         if idx == 6:  # max latency
-            send(MAX_LATENCY)  # "80"
+            send(MAX_LATENCY)  
             continue
 
-        if idx == 7:  # seed (solo Random)
-            send("")  # default 42
+        if idx == 7:  
+            send("")  
             continue
 
         if idx == 8:  # repeat
             algo_idx += 1
-            if algo_idx < len(ALGORITHMS):
-                # ✅ vai al prossimo algoritmo, stessa run_dir
+            if algo_idx < len(ALGORITHMS):               
                 send("y")
             else:
-                # ✅ finito Random => chiudi
                 send("n")
             continue
 
@@ -594,7 +571,7 @@ def run_mode_topology_changes(num_runs: int):
             skip_deploy=False,
             skip_delay=True,
             num_candidates=15,
-            num_pmus=3,
+            num_pmus=4,
             p_extra=0.25,
             pmu_links=1,
         )
@@ -603,20 +580,20 @@ def run_mode_topology_changes(num_runs: int):
         cleanup()
         time.sleep(1)
 
+    plot_mode1_all_plots(
+        runs_dir=Path("runtime_results/runs"),
+        runtime_root=Path("runtime_results"),
+    )
 
                 
 
                 
 def _read_snapshot_pdcs_count(snapshots_dir: Path, prefix: str) -> int:
-    """
-    Legge snapshot_000X_*.json dentro snapshots_dir
-    e ritorna il numero di PDC includendo sempre CC.
-    """
     files = sorted(snapshots_dir.glob(f"{prefix}_*.json"))
     if not files:
         raise FileNotFoundError(f"Missing {prefix}_*.json in {snapshots_dir}")
 
-    snap_path = files[0]  # uno per algoritmo
+    snap_path = files[0]  
     with open(snap_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
@@ -626,7 +603,6 @@ def _read_snapshot_pdcs_count(snapshots_dir: Path, prefix: str) -> int:
 
     count = len(pdcs)
 
-    # include sempre CC
     if "CC" not in pdcs:
         count += 1
 
@@ -639,10 +615,8 @@ def run_mode_increasing_nodes(num_runs: int):
     for r in range(num_runs):
         print(f"\n🔁 MODE 2 | MAIN RUN {r+1}/{num_runs}\n")
         for i, (num_candidates, num_pmus) in enumerate(sweep):
-            print(f"Step {i+1}/{len(sweep)} | candidates={num_candidates}, pmus={num_pmus} (+PMU8)")
+            print(f"Step {i+1}/{len(sweep)} | candidates={num_candidates}, pmus={num_pmus}")
             run_one_size_no_changes(num_candidates=num_candidates, num_pmus=num_pmus)
-
-    # ora i plot si costruiscono leggendo runtime_results/runs
     
     plot_mode2_all_plots(threshold_s=1*60*60, timeout_value_pdcs=1)
 
@@ -650,8 +624,7 @@ def run_mode_increasing_nodes(num_runs: int):
 
 
 def run_mode_custom():
-    """Modalità 3: placeholder for a future mode."""
-    print("\n🧩 Mode 'custom' selected.")
+    print("\n🧩 Mode 'custom' has to be implemented.")
     return
 
 def read_int(prompt: str, default: int) -> int:

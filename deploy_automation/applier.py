@@ -135,7 +135,7 @@ def to_pmu_name(pmu: str) -> str:
     # PMU1 -> PMU-1
     if pmu.startswith("PMU") and pmu[3:].isdigit():
         return f"PMU-{int(pmu[3:])}"
-    return pmu  # fallback
+    return pmu  
 
 
 def extract_paths_from_new_json(paths_json, cc_cluster_id: int = 27):
@@ -382,12 +382,12 @@ def main():
 
     config = build_pdc_topology(data)
 
-    print("=== CONFIG GENERATED ===")
-    print(json.dumps(config, indent=4))
+    #print("=== CONFIG GENERATED ===")
+    #print(json.dumps(config, indent=4))
 
     order = compute_order(data)
 
-    print_operation_plan(order, config)
+    #print_operation_plan(order, config)
 
     print("\n\n🚀 EXECUTING ALL COMMANDS...\n")
     execute_all(order, config)

@@ -25,17 +25,14 @@ FLAG:
 EOF
 }
 
-# --- optional .env loading (not committed) ---
 ENV_FILE="${ENV_FILE:-$REPO_ROOT/.env}"
 if [ -f "$ENV_FILE" ]; then
   # export all vars defined in .env
   set -a
-  # shellcheck disable=SC1090
   source "$ENV_FILE"
   set +a
 fi
 
-# --- args / help ---
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   print_help
   exit 0
@@ -81,14 +78,13 @@ fi
 
 # --- helper functions ---
 
-# From "cluster1" / "cluster-1" / " cluster1 " -> "cluster-1"
+# From "cluster1" / "cluster-1" 
 normalize_cluster_name() {
   local raw="$1"
-  raw="${raw//$'\r'/}"                                # remove CR
-  raw="$(echo -n "$raw" | sed -E 's/[[:space:]]//g')" # remove spaces/tabs
+  raw="${raw//$'\r'/}"                                
+  raw="$(echo -n "$raw" | sed -E 's/[[:space:]]//g')" 
   local norm
   norm="$(echo "$raw" | sed -E 's/^cluster-?([0-9]+)$/cluster-\1/i')"
-  # If it doesn't match the expected pattern, return the cleaned string anyway
   if [[ -z "$norm" ]]; then
     echo "$raw"
   else
@@ -96,7 +92,6 @@ normalize_cluster_name() {
   fi
 }
 
-# port offset based on cluster name
 # cluster-1 -> offset 0, cluster-2 -> 100, cluster-3 -> 200, ...
 cluster_port_offset() {
   local name="$1"
@@ -107,7 +102,6 @@ cluster_port_offset() {
       return
     fi
   fi
-  # fallback se non c'è numero alla fine
   echo 0
 }
 
@@ -131,7 +125,7 @@ clear_volume() {
 
   echo "🧹 Configuration found! Clearing DB volume in '$ctx'..."
 
-  # --- Find PXC name (if any) ---
+  # --- Delete PXC --- 
   local pxc=""
   pxc="$(kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" \
     get perconaxtradbcluster -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
@@ -153,7 +147,6 @@ clear_volume() {
         --request-timeout=20s || true
     fi
 
-    # IMPORTANT: wait for real deletion (bounded), otherwise apply races with Terminating
     echo "   ⏳ Waiting for PXC '$pxc' to be fully deleted (max 10m)..."
     timeout 620s kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" \
       wait --for=delete "perconaxtradbcluster/$pxc" --timeout=600s 2>/dev/null || true
@@ -161,9 +154,7 @@ clear_volume() {
     echo "   ℹ️  No PerconaXtraDBCluster found."
   fi
 
-  # --- Delete PVCs (non-blocking) ---
-  # NOTE: Percona can create multiple PVCs; deleting only .items[0] is fragile.
-  # We delete all PVCs in ns=db to avoid leftovers between runs.
+  # --- Delete PVCs  ---
   local -a pvcs=()
   mapfile -t pvcs < <(kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" \
     get pvc -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)
@@ -239,7 +230,7 @@ wait_for_percona_ready() {
 }
 
 wait_for_all_workloads_ready() {
-  local timeout_sec=7200     # 2 hours
+  local timeout_sec=7200     
   local interval_sec=30
   local elapsed=0
 
@@ -261,7 +252,7 @@ wait_for_all_workloads_ready() {
 
       local ctx="${WORKLOAD_CTX[i]}"
       local ns="${WORKLOAD_NS[i]}"
-      local app="${WORKLOAD_NAME[i]}"   # es: "openpdc" o "pmu-1"
+      local app="${WORKLOAD_NAME[i]}"   # e.g.: "openpdc" or "pmu-1"
 
       deploy_name="$app"
 
@@ -270,7 +261,7 @@ wait_for_all_workloads_ready() {
         continue
       fi
 
-      # CHECK READY/EXPECTED
+      # Check ready replicas vs desired replicas
       ready="$(kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$ns" \
         get deploy "$deploy_name" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)"
 
@@ -315,7 +306,8 @@ readarray -t ORDERED_CLUSTERS < <(
 )
 
 # cluster27 as CC
-ORDERED_CLUSTERS+=("cluster27")
+CLUSTER_CC="${CLUSTER_CC:-cluster-27}"
+ORDERED_CLUSTERS+=($CLUSTER_CC)
 
 if [ "${#ORDERED_CLUSTERS[@]}" -eq 0 ]; then
   echo "⚠️  No clusters found in JSON under 'path.*.path' (after skipping PMU)." >&2
@@ -328,7 +320,7 @@ echo "🗺️  Computed PDC/cluster list (from JSON, no duplicates): ${ORDERED_C
 echo
 
 
-# --- Creation of k3d clusters for each PDC (if they don't exist) ---
+# --- CREATION OF MISSING CLUSTER ---
 
 echo "🏗️  Ensuring k3d clusters exist for each PDC..."
 
@@ -356,8 +348,8 @@ for raw in "${ORDERED_CLUSTERS[@]}"; do
     -p "${p3}:${p3}@server:0"
   )
 
-  # Port only for cluster-27 (testing purposes)
-  if [[ "$cname" == "cluster-27" ]]; then
+  # Port only for CC (testing purposes)
+  if [[ "$cname" == "$CLUSTER_CC" ]]; then
     PORT_ARGS+=(
       -p "32684:32684@server:0"
       -p "32698:32698@server:0"
@@ -405,7 +397,7 @@ fi
 
 echo
 
-# merge kubeconfig + deploy manifest ---
+# MERGE KUBECONFIGS
 
 echo "🔎 Reading list of k3d clusters..."
 clusters_json="$(k3d cluster list -o json)"
@@ -436,12 +428,11 @@ echo "✅ Merged kubeconfig created successfully into $MERGED"
 echo
 
 
-# --- Deploy Percona XtraDB on cluster-db ---
+# --- DEPLOY PERCONADB ON CLUSTER-DB ---
 
 echo
 echo "🏗️  Setup Percona XtraDB sul cluster DB ('$DB_CLUSTER')..."
 
-#PERCONA_DIR="$REPO_ROOT/percona-xtradb-cluster-operator/deploy"
 PERCONA_ROOT="${PERCONA_ROOT:-$HOME/THESIS/percona-xtradb-cluster-operator}"
 PERCONA_DIR="$PERCONA_ROOT/deploy"
 
@@ -502,7 +493,7 @@ WORKLOAD_CTX=()
 WORKLOAD_NS=()
 WORKLOAD_NAME=()
 
-# --- Deploy openPDC on each cluster (except DB) ---
+# --- DEPLOY OpenPDC ON EACH CLUSTER ---
 NAMESPACE="lower"
 RAW_PDC_URL="${RAW_PDC_URL:-https://raw.githubusercontent.com/daribg99/msc-thesis-grid-orchestration/refs/heads/complete_deploy/deploy/openpdc.yaml}"
 
@@ -566,7 +557,7 @@ for c in "${ORDERED_CLUSTERS[@]}"; do
     kubectl --kubeconfig "$MERGED" --context "$ctx" create ns "$NAMESPACE"
   fi
 
-  # 1) Copy secret from DB cluster → target cluster (lower namespace)
+  # COPY SECRET FROM DB CLUSTER TO TARGET PDC CLUSTER
 echo "   🔐 Sync secret 'cluster-db-secrets' from DB → $ctx/$NAMESPACE ..."
 
 kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db get secret cluster-db-secrets -o yaml \
@@ -583,11 +574,7 @@ kubectl --kubeconfig "$MERGED" --context "$DB_CTX" -n db get secret cluster-db-s
   | kubectl --kubeconfig "$MERGED" --context "$ctx" -n "$NAMESPACE" apply -f - >/dev/null
 
 
-  # 2) Preparing patched YAML file for this cluster
-#    - DB_NAME: cluster1/cluster2/...  (removing the '-')
-#    - DB_URL:  IP of the DB (from docker inspect)
-#    - Service name: openpdc-low-<cluster> (per distinguerlo negli script)
-
+  #  Preparing patched YAML file for this cluster
 db_name_no_dash="$(echo "$cname" | sed 's/-//')"
 svc_name="openpdc-$db_name_no_dash"
 
@@ -608,21 +595,21 @@ BEGIN {
     datapub_np = 30065 + offset
 }
 
-# Entrata nella sezione Service
+# Service section start
 /^kind:[[:space:]]*Service/ {
     isService = 1
     print
     next
 }
 
-# Nuovo "kind:" → uscita dal Service
+# New "kind:" section → reset flag
 /^kind:/ {
     isService = 0
     print
     next
 }
 
-# Patch nome Service openpdc
+# Patch Service name openpdc
 isService && $1 == "name:" && $2 == "openpdc" {
     sub(/openpdc$/, svc)
     print
@@ -669,7 +656,7 @@ isService && $1 == "name:" && $2 == "openpdc" {
     next
 }
 
-# Default: stampa la riga
+# Default: print the line unchanged
 {
     print
 }
@@ -696,7 +683,7 @@ done
  
 
 
-# --- Deploy PMU ---
+# --- DEPLOY PMU ---
 echo
 echo "🚀 PMU Deployment..."
 
@@ -719,14 +706,14 @@ readarray -t PMU_MAP < <(
 )
 
 for entry in "${PMU_MAP[@]}"; do
-  pmu_name="$(echo "$entry" | awk '{print $1}')"     # es: PMU-1
-  raw_cluster="$(echo "$entry" | awk '{print $2}')"  # es: cluster1
+  pmu_name="$(echo "$entry" | awk '{print $1}')"     # e.g.: PMU-1
+  raw_cluster="$(echo "$entry" | awk '{print $2}')"  # e.g.: cluster1
 
-  cname="$(normalize_cluster_name "$raw_cluster")"    # es: cluster-1
-  ctx="$(normalize_to_ctx "$cname")"                 # es: k3d-cluster-1
+  cname="$(normalize_cluster_name "$raw_cluster")"    # e.g.: cluster-1
+  ctx="$(normalize_to_ctx "$cname")"                 # e.g.: k3d-cluster-1
 
-  yaml_file="$PMU_DIR/$(echo "$pmu_name" | tr '[:upper:]' '[:lower:]').yaml"
-  # => pmu-1.yaml
+  yaml_file="$PMU_DIR/$(echo "$pmu_name" | tr '[:upper:]' '[:lower:]').yaml" # e.g.: PMU-1 -> pmu-1.yaml
+
 
   echo "➡️  Deploy PMU '$pmu_name' in cluster '$cname'"
 
@@ -750,7 +737,7 @@ for entry in "${PMU_MAP[@]}"; do
     # Register PMU workload for final wait
     pmu_deploy_name="$(echo "$pmu_name" | tr '[:upper:]' '[:lower:]')"  # pmu-1
     WORKLOAD_CTX+=("$ctx")
-    WORKLOAD_NS+=("lower")
+    WORKLOAD_NS+=("$NAMESPACE")
     WORKLOAD_NAME+=("$pmu_deploy_name")
 
   else

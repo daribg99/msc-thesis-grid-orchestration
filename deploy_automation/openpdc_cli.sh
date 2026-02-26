@@ -828,7 +828,7 @@ EOF
 )
 
 # =============================================================
-# Loop sulle PMU
+# PMU loop
 # =============================================================
 IFS=',' read -ra __PMUS_ARR <<< "$PMUS"
 __idx=0
@@ -1116,7 +1116,7 @@ EOF
   LESC=$(esc "$LASTNAME")
   PHESC='SpGxVC2T8Hur/HfkWGEklBRNvlX+07gnGuLg7qC6qy0='
 
-  # ---------- Blocco SQL (variabili espanse) ----------
+  # ---------- SQL Block ----------
   SQL=$(cat <<SQL_EOF
 SET NAMES utf8mb4;
 SET character_set_results = NULL;

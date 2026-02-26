@@ -245,6 +245,62 @@ def build_mode2_results_from_block(run_dirs_block: list[Path], *, main_run_idx: 
 
     return results, results_pdcs
 
+
+def plot_mode1_all_plots(
+    runs_dir: Path,
+    runtime_root: Path,
+) -> None:
+    """
+    Mode 1: per tutte le run in runs_dir:
+      - genera plot singola run in run_dir/plots
+    poi:
+      - genera boxplot aggregati in runtime_root
+    """
+    runs_dir = Path(runs_dir)
+    runtime_root = Path(runtime_root)
+
+    if not runs_dir.exists():
+        print(f"⚠️ runs_dir not found: {runs_dir}")
+        return
+
+    run_dirs = sorted([p for p in runs_dir.glob("run_*") if p.is_dir()])
+    if not run_dirs:
+        print(f"⚠️ No run_* directories under {runs_dir}")
+        return
+
+    # --- singlerun per ogni run_dir ---
+    for run_dir in run_dirs:
+        plots_dir = run_dir / "plots"
+        plots_dir.mkdir(parents=True, exist_ok=True)
+
+        metrics_csv  = run_dir / "topology_change.csv"
+        runtime_file = run_dir / "runtime.csv"
+
+        if metrics_csv.exists():
+            try:
+                plot_jaccard_singlerun(metrics_csv, output_dir=plots_dir)
+            except Exception as e:
+                print(f"⚠️ Failed jaccard singlerun for {run_dir.name}: {e}")
+
+        if runtime_file.exists():
+            try:
+                plot_runtime_singlerun(runtime_file, output_dir=plots_dir)
+            except Exception as e:
+                print(f"⚠️ Failed runtime singlerun for {run_dir.name}: {e}")
+
+    # --- aggregati ---
+    try:
+        plot_jaccard_boxplot(runs_dir, output_dir=runtime_root)
+    except Exception as e:
+        print(f"⚠️ Failed jaccard boxplot: {e}")
+
+    try:
+        plot_runtime_boxplot(runs_dir, output_dir=runtime_root)
+    except Exception as e:
+        print(f"⚠️ Failed runtime boxplot: {e}")
+
+    print("✅ Mode1 plots generated.")
+    
 def plot_mode2_all_plots(
     *,
     threshold_s: float = 1 * 60 * 60,
@@ -297,6 +353,8 @@ def plot_mode2_all_plots(
         # plot_pdcs_boxplot_from_results(all_results_pdcs, timeout_value=timeout_value_pdcs)
     except Exception as e:
         print(f"⚠️ Skipping final PDC boxplot: {e}")
+    
+    print("✅ Mode2 plots generated.")    
 
 
 

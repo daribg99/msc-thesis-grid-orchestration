@@ -6,23 +6,15 @@ from pathlib import Path
 
 
 def draw_graph(G, pdcs=None, paths=None, max_latency=None, output_path: Path | None = None):
-    """
-    Draw the graph and optionally highlight assigned PDCs and PMU->CC paths.
-
-    If output_path is provided, the figure is saved there (versionable per-iteration).
-    Otherwise it is saved to runtime_results/graph.png.
-    """
-
+   
     if pdcs is None:
         pdcs = set()
 
-    # Decide output path
     if output_path is None:
         output_path = Path("runtime_results") / "graph.png"
     else:
         output_path = Path(output_path)
 
-    # Ensure parent folder exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     plt.figure(figsize=(14, 10))
@@ -71,7 +63,6 @@ def draw_graph(G, pdcs=None, paths=None, max_latency=None, output_path: Path | N
         linewidths=1.8,
     )
 
-    # Draw all base edges in light gray
     nx.draw_networkx_edges(G, pos, width=1.2, edge_color="lightgray")
     nx.draw_networkx_labels(G, pos, labels=node_labels, font_size=8)
     nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=7, label_pos=0.5)
@@ -134,7 +125,6 @@ def draw_graph(G, pdcs=None, paths=None, max_latency=None, output_path: Path | N
     plt.axis("off")
     plt.tight_layout()
 
-    # Save to the requested output_path (versionable)
     plt.savefig(output_path, dpi=300, bbox_inches="tight")
 
     backend = matplotlib.get_backend().lower()

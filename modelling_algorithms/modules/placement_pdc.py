@@ -13,11 +13,6 @@ class _TimeoutException(Exception):
     pass
 
 def timeout_return_empty(seconds: int = 1*60*60):
-    """
-    Timeout hard. If exceeded: returns ([], {}, None) by default unless the wrapped
-    function returns a 3-tuple with max_latency: then use ([], {}, max_latency).
-    You can override by passing a custom fallback in the wrapper below if needed.
-    """
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -29,13 +24,9 @@ def timeout_return_empty(seconds: int = 1*60*60):
             try:
                 return func(*args, **kwargs)
             except _TimeoutException:
-                # prova a preservare max_latency se presente tra args/kwargs
                 max_latency = kwargs.get("max_latency", None)
                 if max_latency is None and len(args) >= 2:
-                    # molte tue funzioni hanno firma (G, max_latency, ...)
                     max_latency = args[1]
-                # fallback uniforme: pdcs vuoti + paths vuoti
-                # (se max_latency non esiste, resta None)
                 return ([], {}, max_latency)
             finally:
                 signal.alarm(0)
@@ -47,8 +38,6 @@ def timeout_return_empty(seconds: int = 1*60*60):
 
 @timeout_return_empty(1*60*60)
 def place_pdcs_greedy(G, max_latency, flag_splitting=False):
-
-    import networkx as nx
 
     # -------------------- helpers --------------------
 
@@ -125,7 +114,7 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
     H = build_active_subgraph(G)
     cc = "CC"
     if cc not in H:
-        raise ValueError("Nodo 'CC' non presente o non online (dopo filtering).")
+        raise ValueError("CC node not present or not online (after filtering).")
 
     pmus = [n for n, d in H.nodes(data=True) if d.get("role") == "PMU"]
     pmu_rate = {pmu: float(H.nodes[pmu].get("data_rate", 0.0)) for pmu in pmus}
@@ -346,9 +335,9 @@ def place_pdcs_greedy_no_backtracking(G, max_latency, flag_splitting=False):
     pmus = [n for n, d in H.nodes(data=True) if d.get("role") == "PMU"]
 
     used_bw = {}        # (u,v) -> used bandwidth
-    next_hop_to_cc = {} # PDC(candidate) -> next hop toward CC (per no-splitting)
+    next_hop_to_cc = {} # PDC(candidate) -> next hop toward CC (no-splitting)
 
-    pmu_paths = {}      # pmu -> {"path": [...], "delay": float}   (SOLO se valido)
+    pmu_paths = {}      # pmu -> {"path": [...], "delay": float}   
     pdcs = set()
     accepted_delays = []
 
@@ -358,7 +347,7 @@ def place_pdcs_greedy_no_backtracking(G, max_latency, flag_splitting=False):
         try:
             paths_iter = nx.shortest_simple_paths(H, pmu, cc, weight="latency")
         except (nx.NetworkXNoPath, nx.NodeNotFound):
-            continue  # <-- niente None
+            continue  
 
         chosen_path = None
         chosen_delay = None
@@ -396,7 +385,7 @@ def place_pdcs_greedy_no_backtracking(G, max_latency, flag_splitting=False):
             break
 
         if chosen_path is None:
-            continue  # <-- niente None
+            continue  
 
         for a, b in zip(chosen_path[:-1], chosen_path[1:]):
             k = edge_key(a, b)
@@ -646,13 +635,10 @@ def place_pdcs_bruteforce(G, max_latency, flag_splitting=True, max_paths_per_pmu
         return True
 
     def compute_path_latency(path, G, pdc_nodes):
-        # edges latency
         latency = 0.0
         for u, v in zip(path, path[1:]):
             e = (u, v) if (u, v) in G.edges else (v, u)
             latency += float(G[e[0]][e[1]].get("latency", 0.0))
-
-        # PDC processing (only for nodes in pdc_nodes)
         for n in path:
             if n in pdc_nodes:
                 latency += float(G.nodes[n].get("processing", 0.0))
@@ -690,7 +676,6 @@ def place_pdcs_bruteforce(G, max_latency, flag_splitting=True, max_paths_per_pmu
     # --- best tracking ---
     best_config = None
     best_paths = {}
-    #best_bandwidth_usage = {}
 
     best_covered = -1
     best_total_latency = float("inf")
@@ -821,7 +806,6 @@ def place_pdcs_bruteforce(G, max_latency, flag_splitting=True, max_paths_per_pmu
                 if better:
                     best_config = list(pdc_nodes)
                     best_paths = current_paths.copy()
-                    #best_bandwidth_usage = bandwidth_usage.copy()
                     best_covered = covered_count
                     best_total_latency = total_latency
                     best_k = k
@@ -833,18 +817,15 @@ def place_pdcs_bruteforce(G, max_latency, flag_splitting=True, max_paths_per_pmu
             path = data["path"]
             delay = data["delay"]
             print(f"{pmu} → CC: {' → '.join(path)}, Delay = {delay:.2f} ms")
-            #print("Bandwidth used for each edge:")
-            #for u, v in zip(path, path[1:]):
-            #    edge = (u, v) if (u, v) in G.edges else (v, u)
-            #    usage = best_bandwidth_usage.get(edge, best_bandwidth_usage.get((edge[1], edge[0]), 0.0))
-            #    print(f"  {u}–{v}: {usage} kbps")
     else:
         print("❌ No valid configuration found (covers 0 PMUs).")
 
     return best_config if best_config else [], best_paths, max_latency
 
 
-
+#*********************************************************#
+#                    WORK IN PROGRESS                     #
+#*********************************************************#
 
 
 def q_learning_placement(G, max_latency, episodes=25000, alpha=0.1, gamma=0.9, epsilon=0.8, seed=None, verbose=False):

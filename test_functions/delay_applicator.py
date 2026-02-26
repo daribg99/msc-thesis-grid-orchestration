@@ -23,7 +23,6 @@ def normalize_cluster_id(x: str, cc_cluster: str) -> str:
     s = (x or "").strip()
 
     if s.upper() == "CC":
-        # cc_cluster can be "cluster27" or "cluster-27"
         m = re.fullmatch(r"cluster-?(\d+)", cc_cluster.strip(), re.IGNORECASE)
         if not m:
             raise ValueError(f"Invalid cc_cluster: {cc_cluster}")
@@ -41,7 +40,6 @@ def normalize_cluster_id(x: str, cc_cluster: str) -> str:
 
 
 def find_cluster_server_container(cluster_id: str, names: List[str]) -> str:
-    # expects cluster-<n>
     m = re.fullmatch(r"cluster-(\d+)", cluster_id)
     if not m:
         raise ValueError(f"Invalid cluster id: {cluster_id}")
@@ -82,7 +80,6 @@ def apply_delay(G, output_json_path: str, iface: str = "eth0", cc_cluster: str =
     with open(output_json_path) as f:
         out = json.load(f)
 
-    # ✅ FIX: your JSON has "path" dict
     path_dict = out.get("path", {})
     if not isinstance(path_dict, dict) or not path_dict:
         raise ValueError("output.json has no 'path' dict")
@@ -109,11 +106,10 @@ def apply_delay(G, output_json_path: str, iface: str = "eth0", cc_cluster: str =
             src_raw = p[i]
             dst_raw = p[i + 1]
 
-            # ✅ FIX: normalize N12/CC -> cluster-12/cluster-27
+            # normalize N12/CC -> cluster-12/cluster-27
             src_cluster = normalize_cluster_id(src_raw, cc_cluster)
             dst_cluster = normalize_cluster_id(dst_raw, cc_cluster)
 
-            # with your assumption (one outgoing edge), this is OK:
             if src_cluster in configured_sources:
                 continue
 

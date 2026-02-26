@@ -4,16 +4,11 @@ from placement_pdc import place_pdcs_greedy
 from placement_pdc import place_pdcs_random
 from placement_pdc import place_pdcs_bruteforce
 from placement_pdc import q_learning_placement
-#from placement_pdc import place_pdcs_centrality
-#from placement_pdc import place_pdcs_betweenness
 from graph_model import modify_latency
 from graph_model import modify_edge_status
 from graph_model import modify_bandwidth
 from gnn import train_with_policy_gradient
-# Algoritmi di posizionamento: 
-# place_pdcs_greedy(G, max_latency)
-# place_pdcs_random(G, num_pdcs, seed=None)
-# place_pdcs_centrality(G, num_pdcs)
+
 
 def choose_algorithm(G):
     print("Choose a placement algorithm:")

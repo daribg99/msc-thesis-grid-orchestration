@@ -54,7 +54,6 @@ APPLIER_PY    = DEPLOY_DIR / "applier.py"
 # ================== Utilities ==================
 
 def run_command(cmd: list[str], cwd: Optional[str] = None) -> int:
-    """Run a command streaming stdout+stderr to console."""
     process = subprocess.Popen(
         cmd,
         cwd=cwd,
@@ -249,7 +248,6 @@ def main(
         snap_path = save_snapshot(iteration, data, snapshots_dir)
         print(f"🧾 Snapshot saved to {snap_path}")
 
-        # --- metrics: block per algorithm ---
         curr_pdcs = pdcs_set(data, exclude_cc=True)
 
         if current_alg != placement.alg_label:
@@ -318,18 +316,7 @@ def main(
             print("🧪 DEPLOY MODE: skipping delay application.")
 
         if not prompt_yes_no("\n🔁 Repeat the process?", default=False):
-            print("👋 Exiting loop.")
-
-            # --- Plots for THIS run (indipendente dal deploy) ---
-            if ( not skip_deploy ) and plots:
-                if metrics_csv.exists():
-                    plot_jaccard_singlerun(metrics_csv, output_dir=plots_dir)
-                    plot_jaccard_boxplot(RUNS_DIR, output_dir=RUNTIME_ROOT)
-
-                if runtime_file.exists():
-                    plot_runtime_singlerun(runtime_file, output_dir=plots_dir)
-                    plot_runtime_boxplot(RUNS_DIR, output_dir=RUNTIME_ROOT)
-
+            print("👋 Exiting loop.")            
             break
 
 
@@ -348,7 +335,6 @@ def parse_args():
     p.add_argument("--cc-min-links", type=int, default=2)
     p.add_argument("--cc-max-links", type=int, default=None)
     p.add_argument("--pmu-links", type=int, default=1)
-    p.add_argument("--plots", action="store_true", default=False, help="Generate plots at the end of the run (used by batch runner).")
     return p.parse_args()
 
 
@@ -366,5 +352,4 @@ if __name__ == "__main__":
         cc_min_links=args.cc_min_links,
         cc_max_links=args.cc_max_links,
         pmu_links=args.pmu_links,
-        plots=args.plots,
     )
