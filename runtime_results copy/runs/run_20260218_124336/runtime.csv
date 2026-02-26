@@ -1,0 +1,7 @@
+=== Runtime summary ===
+Placement-Bruteforce 1h 0m 00.00s
+Total Iteration      1h 0m 01.11s
+Placement-Greedy     6.60 ms
+Total Iteration      1180.26 ms
+Placement-Random     54.88 ms
+Total Iteration      1236.13 ms

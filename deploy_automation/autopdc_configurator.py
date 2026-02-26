@@ -322,19 +322,52 @@ def main(
 
 def parse_args():
     import argparse
-    p = argparse.ArgumentParser()
-    p.add_argument("--skip-deploy", action="store_true", default=True)
-    p.add_argument("--no-skip-deploy", dest="skip_deploy", action="store_false")
-    p.add_argument("--skip-delay", action="store_true", default=True)
-    p.add_argument("--no-skip-delay", dest="skip_delay", action="store_false")
 
-    p.add_argument("--num-candidates", type=int, default=15)
-    p.add_argument("--num-pmus", type=int, default=3)
-    p.add_argument("--seed", type=int, default=None)
-    p.add_argument("--p-extra", type=float, default=0.25)
-    p.add_argument("--cc-min-links", type=int, default=2)
-    p.add_argument("--cc-max-links", type=int, default=None)
-    p.add_argument("--pmu-links", type=int, default=1)
+    p = argparse.ArgumentParser(
+        description="AutoPDC configurator for running placement experiments."
+    )
+
+    p.add_argument(
+        "--skip-deploy",
+        action="store_true",
+        default=True,
+        help="Skip deployer and applier execution (default: True)"
+    )
+    p.add_argument(
+        "--no-skip-deploy",
+        dest="skip_deploy",
+        action="store_false",
+        help="Enable deployer and applier execution"
+    )
+
+    p.add_argument(
+        "--skip-delay",
+        action="store_true",
+        default=True,
+        help="Skip delay application phase (default: True)"
+    )
+    p.add_argument(
+        "--no-skip-delay",
+        dest="skip_delay",
+        action="store_false",
+        help="Enable delay application"
+    )
+
+    p.add_argument("--num-candidates", type=int, default=15,
+                   help="Number of candidate nodes (default: 15)")
+    p.add_argument("--num-pmus", type=int, default=4,
+                   help="Number of PMUs (default: 4)")
+    p.add_argument("--seed", type=int, default=None,
+                   help="Random seed for topology generation")
+    p.add_argument("--p-extra", type=float, default=0.25,
+                   help="Probability of extra edges between candidates")
+    p.add_argument("--cc-min-links", type=int, default=2,
+                   help="Minimum number of links from CC to candidates")
+    p.add_argument("--cc-max-links", type=int, default=None,
+                   help="Maximum number of links from CC to candidates")
+    p.add_argument("--pmu-links", type=int, default=1,
+                   help="Number of links from each PMU to candidates")
+
     return p.parse_args()
 
 

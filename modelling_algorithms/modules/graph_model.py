@@ -28,7 +28,8 @@ def create_graph(
             pmus.append("PMU8")
         else:
             pmus.append(f"PMU{i}")
-
+    for p in pmus:
+        G.add_node(p, role="PMU", data_rate=100, status="online")
 
     # helper to add an edge with random latency and default bandwidth/status
     def add_edge(u, v):

@@ -952,21 +952,35 @@ def plot_runtime_boxplot(
 
     
 def plot_time_vs_nodes_singlerun(results: list[dict], *, out_name: str = "time_vs_nodes_singlerun.pdf"):
-    
+    from pathlib import Path
+    import numpy as np
+    import matplotlib.pyplot as plt
+
     SCRIPT_DIR = Path(__file__).resolve().parent          # .../TESI/test_functions
     REPO_ROOT  = SCRIPT_DIR.parent                        # .../TESI
-    
 
-    THRESHOLD = 1 * 60 * 60  
+    THRESHOLD = 1 * 60 * 60  # 3h
 
-    x = [r["nodes"] for r in results]
+    if not results:
+        return
+
+    # --- Sort by real nodes value (stable ordering) ---
+    results = sorted(results, key=lambda r: int(r["nodes"]))
+
+    # Real values (e.g., 13,24,35,46) kept for mapping/labels if needed
+    nodes = [int(r["nodes"]) for r in results]
+
+    # X as indices (same logic as your bar plot): 0,1,2,3...
+    x = np.arange(len(nodes))
+
+    # Raw runtimes
     yB_raw = [r["Bruteforce"] for r in results]
     yG_raw = [r["Greedy"] for r in results]
     yR_raw = [r["Random"] for r in results]
 
+    # --- Compute visible Y max ignoring timeouts/infs and values >= THRESHOLD ---
     all_raw = yB_raw + yG_raw + yR_raw
     finite_vals = [v for v in all_raw if np.isfinite(v) and v < THRESHOLD]
-
 
     if finite_vals:
         Y_MAX_VIS = max(finite_vals) * 1.30
@@ -977,19 +991,18 @@ def plot_time_vs_nodes_singlerun(results: list[dict], *, out_name: str = "time_v
         out = []
         for v in values:
             if (not np.isfinite(v)) or (v >= THRESHOLD):
-                out.append(np.nan)   # ← non viene disegnato
+                out.append(np.nan)   # not drawn
             else:
                 out.append(float(v))
         return out
-
 
     yB = mask_threshold(yB_raw)
     yG = mask_threshold(yG_raw)
     yR = mask_threshold(yR_raw)
 
-
     def jitter(values, factor):
-        return [v * factor for v in values]
+        # keep NaNs as NaNs
+        return [v * factor if np.isfinite(v) else np.nan for v in values]
 
     yB_plot = jitter(yB, 1.00)  # reference
     yG_plot = jitter(yG, 1.03)  # +3%
@@ -997,13 +1010,12 @@ def plot_time_vs_nodes_singlerun(results: list[dict], *, out_name: str = "time_v
 
     # --- Plot ---
     fig, ax = plt.subplots(figsize=(9, 5))
-
     ax.set_title(
-        f"Algorithm Runtime vs Network Size ( single run)",
+        "Algorithm Runtime vs Network Size ( single run)",
         fontsize=12,
         pad=14,
     )
-    
+
     alg_order = ["Bruteforce", "Greedy", "Random"]
 
     ax.plot(
@@ -1012,14 +1024,12 @@ def plot_time_vs_nodes_singlerun(results: list[dict], *, out_name: str = "time_v
         color=ALGO_COLORS_UNIFIED["Bruteforce"],
         label="Bruteforce",
     )
-
     ax.plot(
         x, yG_plot,
         marker="s",
         color=ALGO_COLORS_UNIFIED["Greedy"],
         label="Greedy",
     )
-
     ax.plot(
         x, yR_plot,
         marker="^",
@@ -1027,11 +1037,18 @@ def plot_time_vs_nodes_singlerun(results: list[dict], *, out_name: str = "time_v
         label="Random",
     )
 
-    ax.set_xlabel("Number of nodes (CC + candidates + PMUs)")
+    ax.set_xlabel("Number of candidate nodes")
 
-    nodes_sorted = sorted(set(x))
-    ax.set_xticks(nodes_sorted)
-    ax.set_xticklabels([str(n) for n in nodes_sorted])
+    # --- X ticks: indices, but labels are what you want to show ---
+    # Option A: fixed labels (10,20,30,40) if you always have 4 points
+    # (If len(nodes) != 4, this falls back to showing the real node values)
+    if len(nodes) == 4:
+        xlabels = [10, 20, 30, 40]
+    else:
+        xlabels = nodes  # fallback: show actual nodes
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([str(v) for v in xlabels])
 
     ax.set_ylabel("Algorithm time (s) [log scale]")
     ax.set_yscale("log")
@@ -1047,14 +1064,13 @@ def plot_time_vs_nodes_singlerun(results: list[dict], *, out_name: str = "time_v
         colors=ALGO_COLORS_UNIFIED,
     )
 
-
+    # --- Annotate timeouts (first occurrence per algorithm) ---
     y_anno = Y_MAX_VIS * 1.05
 
     def annotate_timeouts(y_raw):
         already_annotated = False
-
         for xi, v in zip(x, y_raw):
-            if not already_annotated and (v >= THRESHOLD or not np.isfinite(v)):
+            if not already_annotated and (not np.isfinite(v) or v >= THRESHOLD):
                 plt.annotate(
                     "Timeout ≥ 3h ↑",
                     (xi, y_anno),
@@ -1066,14 +1082,13 @@ def plot_time_vs_nodes_singlerun(results: list[dict], *, out_name: str = "time_v
                 )
                 already_annotated = True
 
-
     annotate_timeouts(yB_raw)
     annotate_timeouts(yG_raw)
     annotate_timeouts(yR_raw)
 
-   
-    out_dir = _summary_mode2_dir()   # usa helper sopra
-    out = _summary_mode2_dir() / out_name
+    # --- Save/show ---
+    out_dir = _summary_mode2_dir()
+    out = out_dir / out_name
     _save_or_show(fig, out)
 
 def plot_time_vs_nodes_boxplot(
@@ -1244,8 +1259,16 @@ def plot_time_vs_nodes_boxplot(
 
     # ---- axes ----
     ax.set_xticks(base)
-    ax.set_xticklabels([str(n) for n in nodes_sorted])
-    ax.set_xlabel("Number of nodes (CC + candidates + PMUs)")
+
+    # etichette che vuoi vedere (stile bar plot)
+    if len(nodes_sorted) == 4:
+        xlabels = [10, 20, 30, 40]
+    else:
+        xlabels = nodes_sorted   # fallback
+
+    ax.set_xticklabels([str(v) for v in xlabels])
+    
+    ax.set_xlabel("Number of candidate nodes")
     ax.set_ylabel("Algorithm time (s) [log scale]")
 
     ax.set_yscale("log")

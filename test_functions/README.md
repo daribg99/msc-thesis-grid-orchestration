@@ -20,14 +20,14 @@ If the configuration remains unchanged, the new results will simply be appended 
 # 1) Topology Change Test
 To run topology change tests, run:
 ```bash
-python test_functions/batch_runner.py
+python -m test_functions.batch_runner
 ```
 and select option 1. 
 This script will run N main run, with T changes for each run, with placement algorithm specified into the script. 
 
 # 2) Increasing Node Test
 ```bash
-python test_functions/batch_runner.py
+python -m test_functions.batch_runner
 ```
 and select 2nd option. This will run 4 main runs, without anychange but increasing the number of nodes in the cluster. 
  
