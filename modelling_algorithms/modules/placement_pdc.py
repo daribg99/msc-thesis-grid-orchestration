@@ -78,7 +78,6 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
         PROCESSING_COST = 21.5
 
         # Maximum number of candidate nodes allowed in a path
-        # Even ignoring edge latency, more than this would exceed max_lat
         max_candidates = int(max_lat // PROCESSING_COST) + 2 # to exclude CC and PMU
 
         paths_list = []
@@ -90,7 +89,6 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
 
         for path in gen:
 
-            # ---- PRUNE by candidate count ----
             num_candidates = sum(
                 1 for n in path
                 if H.nodes[n].get("role") == "candidate"
@@ -99,7 +97,6 @@ def place_pdcs_greedy(G, max_latency, flag_splitting=False):
             if num_candidates > max_candidates:
                 continue
 
-            # ---- compute full delay only if structurally feasible ----
             d = float(path_delay(H, path))
 
             if d <= max_lat:

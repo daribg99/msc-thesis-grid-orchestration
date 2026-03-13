@@ -3,7 +3,8 @@ import re
 import subprocess
 from typing import Set, Tuple, List
 
-SCALE_FACTOR = 2.39  # empirically found to match the observed end-to-end delay in the testbed
+#SCALE_FACTOR = 2.39  # empirically found to match the observed end-to-end delay in the testbed
+SCALE_FACTOR = 1.0  # use the raw graph latencies without scaling
 
 def run(cmd):
     p = subprocess.run(cmd, shell=True, text=True)

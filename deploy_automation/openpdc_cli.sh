@@ -161,7 +161,7 @@ run_mysql() {
   set +e
   local out rc dup_msg
   out="$(printf "%s" "$SQL" | kubectl ${DB_CONTEXT:+--context "$DB_CONTEXT"} exec -i "$POD" -c pxc -n "$DB_NS" -- \
-    mysql -h "$SVC" -uroot -p"$ROOTPWD" --database "$DB_NAME" --batch --silent 2>&1)"
+  env MYSQL_PWD="$ROOTPWD" mysql -h "$SVC" -uroot --database "$DB_NAME" --batch --silent 2>&1)"
   rc=$?
   set -e
 
@@ -285,7 +285,8 @@ EOF
   ROOTPWD="$(kubectl --context "$DB_CONTEXT" get secrets "$SECRET" -n "$DB_NS" -o jsonpath='{.data.root}' | base64 --decode)"
 
   EXISTS=$(kubectl --context "$DB_CONTEXT" exec -n "$DB_NS" -i "$POD" -c pxc -- \
-    mysql -h "$SVC" -uroot -p"$ROOTPWD" -N -e "SELECT COUNT(*) FROM ${DB_NAME}.Device WHERE Acronym='${ACRONYM//\'/\'\'}';" )
+  env MYSQL_PWD="$ROOTPWD" mysql -h "$SVC" -uroot -N -e \
+  "SELECT COUNT(*) FROM \`${DB_NAME}\`.Device WHERE Acronym='${ACRONYM//\'/\'\'}';")
   if [[ "$EXISTS" =~ ^[0-9]+$ ]] && [[ "$EXISTS" -gt 0 && ${FORCE:-0} -ne 1 ]]; then
     echo "Device acronym '$ACRONYM' already exists in DB '$DB_NAME'. "
     return 3

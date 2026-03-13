@@ -19,11 +19,34 @@ ALGO_COLORS_UNIFIED = {
 }
 SHORT_LETTER = {"Bruteforce": "B", "Greedy": "G", "Random": "R"}
 
-def _add_letters_above_boxes(ax, bp, positions, box_algos, *, y_mult=1.03, fontsize=9, color="0.25"):
-    """Place B/G/R above each box, anchored to its upper whisker."""
+PLOT_FONTS = {
+    "title": 16,
+    "label": 13,
+    "ticks": 12,
+    "legend": 11,
+    "letters": 11,   # B/G/R
+    "anno": 11,      # Timeout / note varie
+}
+
+def _apply_font_theme(ax, *, title=None):
+    """Apply consistent fonts to a single Axes."""
+    if title is not None:
+        ax.set_title(title, fontsize=PLOT_FONTS["title"], pad=14)
+
+    ax.xaxis.label.set_size(PLOT_FONTS["label"])
+    ax.yaxis.label.set_size(PLOT_FONTS["label"])
+
+    ax.tick_params(axis="x", labelsize=PLOT_FONTS["ticks"])
+    ax.tick_params(axis="y", labelsize=PLOT_FONTS["ticks"])
+    
+    
+def _add_letters_above_boxes(ax, bp, positions, box_algos, *, y_mult=1.03, fontsize=None, color="0.25"):
+    if fontsize is None:
+        fontsize = PLOT_FONTS["letters"]
+
     whiskers = bp["whiskers"]
     for i, algo in enumerate(box_algos):
-        w_upper = whiskers[2 * i + 1]              # upper whisker for i-th box
+        w_upper = whiskers[2 * i + 1]
         y_top = max(w_upper.get_ydata())
         ax.text(
             positions[i],
@@ -35,14 +58,12 @@ def _add_letters_above_boxes(ax, bp, positions, box_algos, *, y_mult=1.03, fonts
             color=color,
         )
 
+def _add_unified_legend(ax, *, alg_order, colors, fontsize=None):
+    if fontsize is None:
+        fontsize = PLOT_FONTS["legend"]
 
-def _add_unified_legend(ax, *, alg_order, colors):
-    """Legend like Jaccard: colored patches with plain algorithm names."""        
-    handles = [
-        Patch(facecolor=colors[a], edgecolor="black", label=a)
-        for a in alg_order
-    ]
-    ax.legend(handles=handles, loc="upper right", frameon=False, fontsize=9)
+    handles = [Patch(facecolor=colors[a], edgecolor="black", label=a) for a in alg_order]
+    ax.legend(handles=handles, loc="upper right", frameon=False, fontsize=fontsize)
 
 def _title_distribution(main: str, *, n: int | None = None) -> str:
     return f"{main} (n = {n} runs)" if n is not None else main
@@ -107,7 +128,6 @@ def clip_by_mad(vals, z_thresh=3.5):
     if mad == 0:
         return vals.tolist()
 
-    # Modified Z-score
     modified_z = 0.6745 * (vals - median) / mad
 
     filtered = vals[np.abs(modified_z) <= z_thresh]
@@ -122,11 +142,9 @@ MODE2_BLOCK_SIZE     = 4
 
 
 def _repo_root() -> Path:
-    # .../TESI/test_functions/plotting.py
     return Path(__file__).resolve().parent.parent
 
 def _runs_root() -> Path:
-    # .../TESI/runtime_results/runs
     return _repo_root() / "runtime_results" / "runs"
 
 def _summary_mode2_dir() -> Path:
@@ -205,8 +223,8 @@ def build_mode2_results_from_block(run_dirs_block: list[Path], *, main_run_idx: 
 
     for i, run_dir in enumerate(run_dirs_block):
         num_candidates = MODE2_CANDIDATES_SEQ[i]
-        num_pmus = MODE2_PMUS_SEQ[i] + 1  # include PMU8
-        nodes_total = 1 + num_candidates + num_pmus + 1  # CC + candidates + PMUs(incl PMU8) + CC? -> replico la tua formula
+        num_pmus = MODE2_PMUS_SEQ[i] + 1  
+        nodes_total = 1 + num_candidates + num_pmus + 1  
 
         runtime_csv = run_dir / "runtime.csv"
         snapshots_dir = run_dir / "snapshots"
@@ -250,12 +268,7 @@ def plot_mode1_all_plots(
     runs_dir: Path,
     runtime_root: Path,
 ) -> None:
-    """
-    Mode 1: per tutte le run in runs_dir:
-      - genera plot singola run in run_dir/plots
-    poi:
-      - genera boxplot aggregati in runtime_root
-    """
+    
     runs_dir = Path(runs_dir)
     runtime_root = Path(runtime_root)
 
@@ -268,7 +281,6 @@ def plot_mode1_all_plots(
         print(f"⚠️ No run_* directories under {runs_dir}")
         return
 
-    # --- singlerun per ogni run_dir ---
     for run_dir in run_dirs:
         plots_dir = run_dir / "plots"
         plots_dir.mkdir(parents=True, exist_ok=True)
@@ -288,7 +300,6 @@ def plot_mode1_all_plots(
             except Exception as e:
                 print(f"⚠️ Failed runtime singlerun for {run_dir.name}: {e}")
 
-    # --- aggregati ---
     try:
         plot_jaccard_boxplot(runs_dir, output_dir=runtime_root)
     except Exception as e:
@@ -296,6 +307,7 @@ def plot_mode1_all_plots(
 
     try:
         plot_runtime_boxplot(runs_dir, output_dir=runtime_root)
+        plot_runtime_boxplot_singlecol(runs_dir, output_dir=runtime_root)
     except Exception as e:
         print(f"⚠️ Failed runtime boxplot: {e}")
 
@@ -316,7 +328,6 @@ def plot_mode2_all_plots(
     all_results: list[dict] = []
     all_results_pdcs: list[dict] = []
 
-    # ---------- per-main-run plots ----------
     for main_idx, blk in enumerate(blocks):
         try:
             results, results_pdcs = build_mode2_results_from_block(blk, main_run_idx=main_idx)
@@ -328,7 +339,6 @@ def plot_mode2_all_plots(
         except Exception as e:
             print(f"⚠️ Skipping MAIN RUN {main_idx}: {e}")
 
-    # ---------- final TIME boxplot ----------
     try:
         if not all_results:
             raise RuntimeError("No valid data for TIME boxplot.")
@@ -346,11 +356,8 @@ def plot_mode2_all_plots(
 
     # ---------- final PDC boxplot ----------
     try:
-        # se vuoi tenerla com’è, ok chiamare la funzione “finale”
         plot_pdcs_vs_candidates_boxplot(timeout_value=timeout_value_pdcs)
 
-        # alternativa (se un giorno vuoi evitare anche qui il re-parse):
-        # plot_pdcs_boxplot_from_results(all_results_pdcs, timeout_value=timeout_value_pdcs)
     except Exception as e:
         print(f"⚠️ Skipping final PDC boxplot: {e}")
     
@@ -388,7 +395,6 @@ def plot_jaccard_singlerun(
                 t = int(float(r["T"]))
             except (KeyError, ValueError):
                 continue
-
             if t == 0:
                 continue
 
@@ -404,7 +410,6 @@ def plot_jaccard_singlerun(
         print("⚠️ No data to plot (after skipping T0).")
         return
 
-    # --- Plot ---
     fig, ax = plt.subplots()
 
     alg_order = ["Bruteforce", "Greedy", "Random"]
@@ -429,20 +434,16 @@ def plot_jaccard_singlerun(
             label=(alg_labels.get(alg, alg) if alg_labels else alg),
         )
 
-    ax.set_title(
-        f"Jaccard Distance vs Topology Change ( single run )",
-        fontsize=12,
-        pad=14,
-    )
-    
     xticks = sorted(all_t)
     ax.set_xticks(xticks)
-    ax.set_xticklabels([f"T{t}" for t in xticks])
+    ax.set_xticklabels([f"T{t}" for t in xticks], fontsize=PLOT_FONTS["ticks"])
 
     ax.set_xlabel("Topology change index (T)")
     ax.set_ylabel("Jaccard Distance")
     ax.set_ylim(0.0, 1.0)
     ax.grid(True)
+
+    _apply_font_theme(ax, title="Jaccard Distance vs Topology Change (single run)")
 
     _add_unified_legend(
         ax,
@@ -450,7 +451,7 @@ def plot_jaccard_singlerun(
         colors=ALGO_COLORS_UNIFIED,
     )
 
-    out = (output_dir / f"plot_jaccard_singlerun.pdf") if output_dir is not None else None
+    out = (output_dir / "plot_jaccard_singlerun.pdf") if output_dir is not None else None
     _save_or_show(fig, out)
 
 
@@ -460,7 +461,7 @@ def plot_jaccard_boxplot(
     runs_dir: Path,
     output_dir: Path | None = None,
     *,
-    alg_order: list[str] = ["Bruteforce", "Greedy", "Random"],  
+    alg_order: list[str] = ["Bruteforce", "Greedy", "Random"],
     required_T: int | None = None,
     metric_col: str = "jaccard_distance",
     t_col: str = "T",
@@ -470,7 +471,6 @@ def plot_jaccard_boxplot(
     metrics_name = "topology_change.csv"
 
     def _to_plain_alg(name: str) -> str:
-        """Accepts 'Placement-X' or 'X' and returns plain 'X'."""
         s = (name or "").strip()
         if s.lower().startswith("placement-"):
             s = s.split("-", 1)[1].strip()
@@ -481,7 +481,7 @@ def plot_jaccard_boxplot(
             return "Greedy"
         if low == "random":
             return "Random"
-        return s  
+        return s
 
     run_dirs = sorted([p for p in runs_dir.glob("run_*") if p.is_dir()])
     if not run_dirs:
@@ -535,7 +535,6 @@ def plot_jaccard_boxplot(
 
         if not ok:
             continue
-
         if any(len(run_vals[a]) == 0 for a in alg_order):
             continue
 
@@ -568,7 +567,7 @@ def plot_jaccard_boxplot(
     positions: list[float] = []
 
     nA = len(alg_order)
-    base = np.arange(K)  
+    base = np.arange(K)
     width = 0.24 if nA == 3 else min(0.24, 0.8 / max(nA, 1))
     offsets = (np.arange(nA) - (nA - 1) / 2.0) * width
 
@@ -577,7 +576,7 @@ def plot_jaccard_boxplot(
         for j, alg in enumerate(alg_order):
             samples = [run[alg][t] for run in filtered_runs]
             box_data.append(samples)
-            box_algos.append(alg)                 
+            box_algos.append(alg)
             positions.append(base[idx_t] + offsets[j])
 
     fig, ax = plt.subplots(figsize=(max(9, K * 1.4), 6))
@@ -599,7 +598,7 @@ def plot_jaccard_boxplot(
     _add_letters_above_boxes(ax, bp, positions, box_algos)
 
     ax.set_xticks(base)
-    ax.set_xticklabels([f"T{t}" for t in range(1, K + 1)])
+    ax.set_xticklabels([f"T{t}" for t in range(1, K + 1)], fontsize=PLOT_FONTS["ticks"])
     ax.set_xlabel("Topology change index (T)")
     ax.set_ylabel("Jaccard distance")
     ax.set_ylim(0.0, 1.0)
@@ -607,19 +606,17 @@ def plot_jaccard_boxplot(
 
     _add_unified_legend(ax, alg_order=alg_order, colors=ALGO_COLORS_UNIFIED)
 
-    
-    ax.set_title(
-        f"Distribution of Jaccard Distance vs Topology Change (n = {len(filtered_runs)} runs)",
-        fontsize=12,
-        pad=14,
+    _apply_font_theme(
+        ax,
+        title=f"Distribution of Jaccard Distance vs Topology Change (n = {len(filtered_runs)} runs)",
     )
-    
+
     fig.subplots_adjust(top=0.88, bottom=0.14)
 
     out = (
-    output_dir / "summarymode1" / "jaccard_boxplot.pdf"
-    if output_dir is not None
-    else None
+        output_dir / "summarymode1" / "jaccard_boxplot.pdf"
+        if output_dir is not None
+        else None
     )
 
     _save_or_show(fig, out, pad=0.2)
@@ -689,7 +686,6 @@ def plot_runtime_singlerun(
                 _flush_if_complete()
                 continue
 
-
     if not records:
         print("⚠️ No runtime data to plot (no complete blocks parsed).")
         print(f"DEBUG file: {runtime_csv}")
@@ -742,24 +738,17 @@ def plot_runtime_singlerun(
     applier   /= 1000.0
 
     T = np.arange(0, K)
-  
-    group_width_max = 0.8          
-    gap_ratio = 0.10              
 
-    width_target = 0.25 if nA == 3 else min(0.25, group_width_max / max(nA, 1))
-
-    gap = gap_ratio * width_target
+    group_width_max = 0.8
+    gap_ratio = 0.10
 
     den = nA + (nA - 1) * gap_ratio
     width = min(0.25, group_width_max / den)
-
     gap = gap_ratio * width
 
     effective_step = width + gap
     offsets = (np.arange(nA) - (nA - 1) / 2.0) * effective_step
     x = np.repeat(T, nA) + np.tile(offsets, K)
-
-
 
     placement_flat = placement.reshape(-1)
     deployer_flat  = deployer.reshape(-1)
@@ -771,16 +760,10 @@ def plot_runtime_singlerun(
     ax.bar(x, deployer_flat,  width=width, bottom=placement_flat, label="Deployer")
     ax.bar(x, applier_flat,   width=width, bottom=placement_flat + deployer_flat, label="Applier")
 
-    ax.set_title(
-        f"Runtime vs Topology Change ( single run )",
-        fontsize=12,
-        pad=14,
-    )
-    
+    ax.set_xticks(T)
+    ax.set_xticklabels([f"T{t}" for t in T], fontsize=PLOT_FONTS["ticks"])
     ax.set_xlabel("Topology change index (T)")
     ax.set_ylabel("Time (s)")
-    ax.set_xticks(T)
-    ax.set_xticklabels([f"T{t}" for t in T])
 
     short = {"Greedy": "G", "Bruteforce": "B", "Random": "R"}
     total_height = placement + deployer + applier
@@ -794,23 +777,20 @@ def plot_runtime_singlerun(
                 short.get(algo, algo[0].upper()),
                 ha="center",
                 va="bottom",
-                fontsize=9,
+                fontsize=PLOT_FONTS["letters"],
                 color="0.25",
                 clip_on=False,
             )
 
     ax.axhline(0, linewidth=0.8)
-    ax.legend(loc="upper right")
+    ax.legend(loc="upper right", fontsize=PLOT_FONTS["legend"])
     ax.grid(axis="y")
+
+    _apply_font_theme(ax, title="Runtime vs Topology Change (single run)")
 
     fig.subplots_adjust(top=0.92, bottom=0.14)
 
-    out = (
-        output_dir / "plot_runtime_singlerun.pdf"
-        if output_dir is not None
-        else None
-    )
-
+    out = (output_dir / "plot_runtime_singlerun.pdf") if output_dir is not None else None
     _save_or_show(fig, out, pad=0.2)
 
 
@@ -820,10 +800,8 @@ def plot_runtime_boxplot(
     output_dir: Path | None = None,
     *,
     alg_order: list[str] = ["Bruteforce", "Greedy", "Random"],
-    required_T: int | None = None,   
+    required_T: int | None = None,
 ):
-    
-
     runtime_files = sorted(runs_dir.glob("run_*/runtime.csv"))
     if not runtime_files:
         print(f"⚠️ No runtime.csv files found under {runs_dir}/run_*/")
@@ -832,8 +810,6 @@ def plot_runtime_boxplot(
     placement_re = re.compile(r"^Placement-(Greedy|Bruteforce|Random)\s+(.+)$", re.IGNORECASE)
     total_re     = re.compile(r"^Total\s+Iteration\s+(.+?)\s*$", re.IGNORECASE)
 
-    # Each valid run contributes:
-    #   per_algo_totals[algo] = [t0_ms, t1_ms, ...]
     valid_runs: list[dict[str, list[float]]] = []
 
     for rf in runtime_files:
@@ -867,7 +843,6 @@ def plot_runtime_boxplot(
         lengths = [len(per_algo_totals[a]) for a in alg_order]
         if len(set(lengths)) != 1:
             continue
-
         if lengths[0] == 0:
             continue
 
@@ -920,23 +895,20 @@ def plot_runtime_boxplot(
 
     _add_letters_above_boxes(ax, bp, positions, box_algos)
 
-
-    ax.set_title(
-        f"Distribution of Total Runtime vs Topology Change (n = {len(valid_runs)} runs)",
-        fontsize=12,
-        pad=14,
-    )
-    
-    _add_unified_legend(ax, alg_order=alg_order, colors=ALGO_COLORS_UNIFIED)
-
     ax.set_xticks(base)
-    ax.set_xticklabels([f"T{t}" for t in range(K)])
+    ax.set_xticklabels([f"T{t}" for t in range(K)], fontsize=PLOT_FONTS["ticks"])
 
     ax.set_xlabel("Topology change index (T)")
     ax.set_ylabel("Time (s)")
-
     ax.grid(axis="y")
-    
+
+    _add_unified_legend(ax, alg_order=alg_order, colors=ALGO_COLORS_UNIFIED)
+
+    _apply_font_theme(
+        ax,
+        title=f"Distribution of Total Runtime vs Topology Change (n = {len(valid_runs)} runs)",
+    )
+
     fig.subplots_adjust(top=0.88, bottom=0.14)
 
     out = (
@@ -947,6 +919,168 @@ def plot_runtime_boxplot(
 
     _save_or_show(fig, out, pad=0.2)
 
+def plot_runtime_boxplot_singlecol(  # papar single col version
+    runs_dir: Path,
+    output_dir: Path | None = None,
+    *,
+    alg_order: list[str] = ["Bruteforce", "Greedy", "Random"],
+    required_T: int | None = None,
+    column_width: float = 3.4,   
+    aspect: float = 0.72,        # height = column_width * aspect
+    show_title: bool = False,
+):
+    runtime_files = sorted(runs_dir.glob("run_*/runtime.csv"))
+    if not runtime_files:
+        print(f"⚠️ No runtime.csv files found under {runs_dir}/run_*/")
+        return
+
+    placement_re = re.compile(r"^Placement-(Greedy|Bruteforce|Random)\s+(.+)$", re.IGNORECASE)
+    total_re     = re.compile(r"^Total\s+Iteration\s+(.+?)\s*$", re.IGNORECASE)
+
+    valid_runs: list[dict[str, list[float]]] = []
+
+    for rf in runtime_files:
+        per_algo_totals: dict[str, list[float]] = {a: [] for a in alg_order}
+        cur_algo: str | None = None
+
+        with open(rf, "r") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("==="):
+                    continue
+
+                line = line.replace("\u00a0", " ")
+                line = " ".join(line.split())
+
+                m = placement_re.match(line)
+                if m:
+                    cur_algo = m.group(1).capitalize()
+                    continue
+
+                m = total_re.match(line)
+                if m and cur_algo is not None:
+                    ms = _parse_time_to_ms(m.group(1))
+                    if ms is not None and cur_algo in per_algo_totals:
+                        per_algo_totals[cur_algo].append(ms)
+
+        present_algos = [a for a in alg_order if len(per_algo_totals[a]) > 0]
+        if len(present_algos) != len(alg_order):
+            continue
+
+        lengths = [len(per_algo_totals[a]) for a in alg_order]
+        if len(set(lengths)) != 1:
+            continue
+        if lengths[0] == 0:
+            continue
+
+        valid_runs.append(per_algo_totals)
+
+    if not valid_runs:
+        print("⚠️ No valid runs found (missing blocks or inconsistent lengths).")
+        return
+
+    K_per_run = [len(r[alg_order[0]]) for r in valid_runs]
+    K_common = min(K_per_run)
+    K = K_common if required_T is None else min(required_T, K_common)
+
+    if K <= 0:
+        print("⚠️ No T left to plot after applying required_T/min-common.")
+        return
+
+    box_data: list[list[float]] = []
+    box_algos: list[str] = []
+    positions: list[float] = []
+
+    nA = len(alg_order)
+    base = np.arange(K)
+
+    width = min(0.16, 0.72 / max(nA, 1))
+    offsets = (np.arange(nA) - (nA - 1) / 2.0) * width
+
+    for t in range(K):
+        for j, algo in enumerate(alg_order):
+            samples = [run[algo][t] / 1000.0 for run in valid_runs]
+            samples = clip_by_mad(samples, z_thresh=3.5)
+            box_data.append(samples)
+            box_algos.append(algo)
+            positions.append(base[t] + offsets[j])
+
+    fig_h = column_width * aspect
+    fig, ax = plt.subplots(figsize=(column_width, fig_h))
+
+    bp = ax.boxplot(
+        box_data,
+        positions=positions,
+        widths=width * 0.85,
+        patch_artist=True,
+        showfliers=False,   # outliers removed for paper version
+        manage_ticks=False,
+        medianprops=dict(color="black", linewidth=1.0),
+        whiskerprops=dict(linewidth=0.8),
+        capprops=dict(linewidth=0.8),
+        boxprops=dict(linewidth=0.8),
+    )
+
+    for box, algo in zip(bp["boxes"], box_algos):
+        box.set_facecolor(ALGO_COLORS_UNIFIED.get(algo, "0.8"))
+        box.set_edgecolor("black")
+        box.set_alpha(0.9)
+
+    _add_letters_above_boxes(ax, bp, positions, box_algos)
+
+    ax.set_xticks(base)
+    ax.set_xticklabels([f"T{t}" for t in range(K)], fontsize=7)
+
+    ax.tick_params(axis="y", labelsize=7)
+    ax.tick_params(axis="x", labelsize=7, pad=1)
+
+    ax.set_xlabel("Topology change", fontsize=8, labelpad=2)
+    ax.set_ylabel("Time (s)", fontsize=8, labelpad=2)
+
+    ax.grid(axis="y", linewidth=0.5, alpha=0.5)
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    handles = [
+        Patch(
+            facecolor=ALGO_COLORS_UNIFIED.get(algo, "0.8"),
+            edgecolor="black",
+            label=algo
+        )
+        for algo in alg_order
+    ]
+    ax.legend(
+        handles=handles,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.18),
+        ncol=len(alg_order),
+        frameon=False,
+        fontsize=7,
+        handlelength=1.0,
+        columnspacing=0.8,
+        handletextpad=0.4,
+        borderaxespad=0.2,
+    )
+
+    if show_title:
+        ax.set_title(
+            f"Runtime distribution ({len(valid_runs)} runs)",
+            fontsize=8,
+            pad=2,
+        )
+
+    ax.set_xlim(-0.5, K - 0.5)
+
+    fig.tight_layout(pad=0.3)
+
+    out = (
+        output_dir / "summarymode1" / "runtime_boxplot_singlecol.png"
+        if output_dir is not None
+        else None
+    )
+
+    _save_or_show(fig, out, dpi=600, pad=0.01)
 
 # ---------------------------------------TIME VS NODES------------------------------------------------#
 
@@ -956,29 +1090,23 @@ def plot_time_vs_nodes_singlerun(results: list[dict], *, out_name: str = "time_v
     import numpy as np
     import matplotlib.pyplot as plt
 
-    SCRIPT_DIR = Path(__file__).resolve().parent          # .../TESI/test_functions
-    REPO_ROOT  = SCRIPT_DIR.parent                        # .../TESI
+    SCRIPT_DIR = Path(__file__).resolve().parent
+    REPO_ROOT  = SCRIPT_DIR.parent
 
-    THRESHOLD = 1 * 60 * 60  # 3h
+    THRESHOLD = 1 * 60 * 60  
 
     if not results:
         return
 
-    # --- Sort by real nodes value (stable ordering) ---
     results = sorted(results, key=lambda r: int(r["nodes"]))
 
-    # Real values (e.g., 13,24,35,46) kept for mapping/labels if needed
     nodes = [int(r["nodes"]) for r in results]
-
-    # X as indices (same logic as your bar plot): 0,1,2,3...
     x = np.arange(len(nodes))
 
-    # Raw runtimes
     yB_raw = [r["Bruteforce"] for r in results]
     yG_raw = [r["Greedy"] for r in results]
     yR_raw = [r["Random"] for r in results]
 
-    # --- Compute visible Y max ignoring timeouts/infs and values >= THRESHOLD ---
     all_raw = yB_raw + yG_raw + yR_raw
     finite_vals = [v for v in all_raw if np.isfinite(v) and v < THRESHOLD]
 
@@ -991,7 +1119,7 @@ def plot_time_vs_nodes_singlerun(results: list[dict], *, out_name: str = "time_v
         out = []
         for v in values:
             if (not np.isfinite(v)) or (v >= THRESHOLD):
-                out.append(np.nan)   # not drawn
+                out.append(np.nan)
             else:
                 out.append(float(v))
         return out
@@ -1001,20 +1129,13 @@ def plot_time_vs_nodes_singlerun(results: list[dict], *, out_name: str = "time_v
     yR = mask_threshold(yR_raw)
 
     def jitter(values, factor):
-        # keep NaNs as NaNs
         return [v * factor if np.isfinite(v) else np.nan for v in values]
 
-    yB_plot = jitter(yB, 1.00)  # reference
-    yG_plot = jitter(yG, 1.03)  # +3%
-    yR_plot = jitter(yR, 0.97)  # -3%
+    yB_plot = jitter(yB, 1.00)
+    yG_plot = jitter(yG, 1.03)
+    yR_plot = jitter(yR, 0.97)
 
-    # --- Plot ---
     fig, ax = plt.subplots(figsize=(9, 5))
-    ax.set_title(
-        "Algorithm Runtime vs Network Size ( single run)",
-        fontsize=12,
-        pad=14,
-    )
 
     alg_order = ["Bruteforce", "Greedy", "Random"]
 
@@ -1039,16 +1160,13 @@ def plot_time_vs_nodes_singlerun(results: list[dict], *, out_name: str = "time_v
 
     ax.set_xlabel("Number of candidate nodes")
 
-    # --- X ticks: indices, but labels are what you want to show ---
-    # Option A: fixed labels (10,20,30,40) if you always have 4 points
-    # (If len(nodes) != 4, this falls back to showing the real node values)
     if len(nodes) == 4:
         xlabels = [10, 20, 30, 40]
     else:
-        xlabels = nodes  # fallback: show actual nodes
+        xlabels = nodes
 
     ax.set_xticks(x)
-    ax.set_xticklabels([str(v) for v in xlabels])
+    ax.set_xticklabels([str(v) for v in xlabels], fontsize=PLOT_FONTS["ticks"])
 
     ax.set_ylabel("Algorithm time (s) [log scale]")
     ax.set_yscale("log")
@@ -1064,19 +1182,19 @@ def plot_time_vs_nodes_singlerun(results: list[dict], *, out_name: str = "time_v
         colors=ALGO_COLORS_UNIFIED,
     )
 
-    # --- Annotate timeouts (first occurrence per algorithm) ---
+    # ---- Annotate timeouts (font coerente) ----
     y_anno = Y_MAX_VIS * 1.05
 
     def annotate_timeouts(y_raw):
         already_annotated = False
         for xi, v in zip(x, y_raw):
             if not already_annotated and (not np.isfinite(v) or v >= THRESHOLD):
-                plt.annotate(
-                    "Timeout ≥ 3h ↑",
+                ax.annotate(
+                    "Timeout ≥ 1h ↑",
                     (xi, y_anno),
                     ha="center",
                     va="bottom",
-                    fontsize=9,
+                    fontsize=PLOT_FONTS["anno"],
                     color="0.25",
                     clip_on=False,
                 )
@@ -1086,26 +1204,131 @@ def plot_time_vs_nodes_singlerun(results: list[dict], *, out_name: str = "time_v
     annotate_timeouts(yG_raw)
     annotate_timeouts(yR_raw)
 
-    # --- Save/show ---
+    _apply_font_theme(ax, title="Algorithm Runtime vs Network Size (single run)")
+
     out_dir = _summary_mode2_dir()
     out = out_dir / out_name
     _save_or_show(fig, out)
 
+def plot_pdcs_vs_candidates_singlerun(run_results_pdcs: list[dict], run_index: int):
+    """
+    Bar plot:
+    X = number of candidate nodes
+    Y = number of PDCs (including CC)
+    3 barre: Bruteforce, Greedy, Random
+
+    Salva in runtime_results/summarymode2.
+    """
+    if not run_results_pdcs:
+        return
+
+    alg_order = ["Bruteforce", "Greedy", "Random"]
+
+    # Ordina per candidates
+    run_results_pdcs.sort(key=lambda x: int(x["candidates"]))
+
+    candidates = [int(x["candidates"]) for x in run_results_pdcs]
+    series = {
+        "Bruteforce": [int(x["Bruteforce"]) for x in run_results_pdcs],
+        "Greedy":     [int(x["Greedy"]) for x in run_results_pdcs],
+        "Random":     [int(x["Random"]) for x in run_results_pdcs],
+    }
+
+    x = np.arange(len(candidates))
+    width = 0.25
+    offsets = (np.arange(len(alg_order)) - (len(alg_order) - 1) / 2.0) * width
+
+    fig, ax = plt.subplots()
+
+    for j, algo in enumerate(alg_order):
+        xpos = x + offsets[j]
+        vals = series[algo]
+
+        bars = []
+        for xi, val in zip(xpos, vals):
+            if val == 1:
+                ax.text(
+                    xi,
+                    0.3,  
+                    "Timeout",
+                    ha="center",
+                    va="bottom",
+                    fontsize=PLOT_FONTS["anno"],
+                    fontweight="bold",
+                    rotation=90,
+                    color=ALGO_COLORS_UNIFIED.get(algo, "black"),
+                )
+                bars.append(None)
+            else:
+                bar = ax.bar(
+                    xi,
+                    val,
+                    width=width,
+                    color=ALGO_COLORS_UNIFIED.get(algo, "0.8"),
+                    edgecolor="black",
+                    linewidth=0.8,
+                )
+                bars.append(bar[0])
+
+        letter = SHORT_LETTER.get(algo, "")
+        for rect in bars:
+            if rect is None:
+                continue
+            h = rect.get_height()
+            ax.text(
+                rect.get_x() + rect.get_width() / 2.0,
+                h + 0.05,  
+                letter,
+                ha="center",
+                va="bottom",
+                fontsize=PLOT_FONTS["letters"],
+                color="0.25",
+                clip_on=False,
+            )
+
+    ax.set_xlabel("Number of candidate nodes")
+    ax.set_ylabel("Number of PDCs (including CC)")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([str(c) for c in candidates], fontsize=PLOT_FONTS["ticks"])
+
+    handles = [
+        Patch(facecolor=ALGO_COLORS_UNIFIED[a], edgecolor="black", label=a)
+        for a in alg_order
+    ]
+    ax.legend(
+        handles=handles,
+        loc="upper left",
+        frameon=False,
+        fontsize=PLOT_FONTS["legend"],
+    )
+
+    ax.grid(True, axis="y", alpha=0.25)
+
+    _apply_font_theme(ax, title="Number of PDCs vs Candidates (single run)")
+
+    plt.tight_layout()
+
+    plots_dir = _summary_mode2_dir()
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
+    out_path = plots_dir / f"pdcs_vs_candidates_singlerun{run_index}.pdf"
+    _save_or_show(fig, out_path, dpi=200)
+    
 def plot_time_vs_nodes_boxplot(
     results: list[dict],
     output_dir: "Path | None" = None,
     *,
     alg_order: list[str] = ["Bruteforce", "Greedy", "Random"],
-    threshold_s: float = 3 * 60 * 60,   # 3 ore
+    threshold_s: float = 1 * 60 * 60,   
 ):
     from pathlib import Path
     import numpy as np
     import matplotlib.pyplot as plt
 
-    SCRIPT_DIR = Path(__file__).resolve().parent          # .../TESI/test_functions
-    REPO_ROOT  = SCRIPT_DIR.parent                        # .../TESI
+    SCRIPT_DIR = Path(__file__).resolve().parent
+    REPO_ROOT  = SCRIPT_DIR.parent
 
-    # output
     out_dir = (REPO_ROOT / "runtime_results" / "summarymode2") if output_dir is None else output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1126,8 +1349,6 @@ def plot_time_vs_nodes_boxplot(
 
             data.append(vals_ok)
             timeout_counts.append(timeouts)
-
-            # vero timeout quando NON hai box (tutte le run sono timeout)
             timeout_mask.append(len(vals_ok) == 0)
 
         return data, timeout_counts, timeout_mask
@@ -1142,7 +1363,6 @@ def plot_time_vs_nodes_boxplot(
         timeouts_by_algo[algo] = c
         timeout_mask_by_algo[algo] = m
 
-    # y-limits (robusti, ma includi max)
     all_ok: list[float] = []
     for algo in alg_order:
         for group in data_by_algo[algo]:
@@ -1174,10 +1394,8 @@ def plot_time_vs_nodes_boxplot(
 
     fig, ax = plt.subplots(figsize=(max(10, K * 1.8), 5.5))
 
-    # n = runs (stima semplice: assume results completi)
     num_nodes = len({int(r["nodes"]) for r in results})
     num_runs = (len(results) // num_nodes) if num_nodes > 0 else 0
-    
 
     bp = ax.boxplot(
         box_data,
@@ -1187,14 +1405,7 @@ def plot_time_vs_nodes_boxplot(
         showfliers=False,
         manage_ticks=False,
     )
-    ax.set_title(
-        f"Distribution of Algorithm Runtime vs Network Size (n = {num_runs} runs)",
-        fontsize=12,
-        pad=14,
-    )
 
-
-    # ---- style lines ----
     for med in bp["medians"]:
         med.set_color("black"); med.set_linewidth(1.6)
     for w in bp["whiskers"]:
@@ -1202,8 +1413,6 @@ def plot_time_vs_nodes_boxplot(
     for c in bp["caps"]:
         c.set_color("black"); c.set_linewidth(1.2)
 
-    # ---- styling + timeout labels at "box slot" ----
-    # posizione y del testo: metà della scala log (stabile)
     y_lo = 1e-3
     y_hi = Y_MAX_VIS
     y_text_fixed = 10 ** (0.5 * (np.log10(y_lo) + np.log10(y_hi)))
@@ -1214,7 +1423,6 @@ def plot_time_vs_nodes_boxplot(
         vals_ok = data_by_algo[algo][i_node]
 
         if len(vals_ok) == 0:
-            # tutto timeout: nascondi box e metti scritta
             box.set_visible(False)
             ax.text(
                 positions[i],
@@ -1223,7 +1431,7 @@ def plot_time_vs_nodes_boxplot(
                 rotation=90,
                 ha="center",
                 va="center",
-                fontsize=9,
+                fontsize=PLOT_FONTS["anno"],
                 fontweight="bold",
                 color=ALGO_COLORS_UNIFIED.get(algo, "0.25"),
                 alpha=0.90,
@@ -1235,7 +1443,6 @@ def plot_time_vs_nodes_boxplot(
             box.set_edgecolor("black")
 
             if c_to > 0:
-                # timeout parziali: rendi box trasparente + scritta
                 box.set_alpha(0.18)
                 ax.text(
                     positions[i],
@@ -1244,7 +1451,7 @@ def plot_time_vs_nodes_boxplot(
                     rotation=90,
                     ha="center",
                     va="center",
-                    fontsize=9,
+                    fontsize=PLOT_FONTS["anno"],
                     fontweight="bold",
                     color=ALGO_COLORS_UNIFIED.get(algo, "0.25"),
                     alpha=0.90,
@@ -1254,20 +1461,17 @@ def plot_time_vs_nodes_boxplot(
             else:
                 box.set_alpha(0.85)
 
-    # ---- letters above boxes (B/G/R) ----
     _add_letters_above_boxes(ax, bp, positions, box_algos)
 
-    # ---- axes ----
     ax.set_xticks(base)
 
-    # etichette che vuoi vedere (stile bar plot)
     if len(nodes_sorted) == 4:
         xlabels = [10, 20, 30, 40]
     else:
-        xlabels = nodes_sorted   # fallback
+        xlabels = nodes_sorted
 
-    ax.set_xticklabels([str(v) for v in xlabels])
-    
+    ax.set_xticklabels([str(v) for v in xlabels], fontsize=PLOT_FONTS["ticks"])
+
     ax.set_xlabel("Number of candidate nodes")
     ax.set_ylabel("Algorithm time (s) [log scale]")
 
@@ -1277,8 +1481,12 @@ def plot_time_vs_nodes_boxplot(
     ax.grid(True, axis="y", which="major", alpha=0.20)
     ax.grid(False, axis="y", which="minor")
 
-    # ---- legend (keep it) ----
     _add_unified_legend(ax, alg_order=alg_order, colors=ALGO_COLORS_UNIFIED)
+
+    _apply_font_theme(
+        ax,
+        title=f"Distribution of Algorithm Runtime vs Network Size (n = {num_runs} runs)",
+    )
 
     fig.subplots_adjust(top=0.86, bottom=0.16)
 
@@ -1288,122 +1496,7 @@ def plot_time_vs_nodes_boxplot(
 
 #---------------------------------------PDCs VS CANDIDATES------------------------------------------------#
 
-def plot_pdcs_vs_candidates_singlerun(run_results_pdcs: list[dict], run_index: int):
-    """
-    Bar plot:
-    X = number of candidate nodes
-    Y = number of PDCs (including CC)
-    3 barre: Bruteforce, Greedy, Random
-
-    Salva in runtime_results/summarymode2.
-    """
-
-    if not run_results_pdcs:
-        return
-
-    alg_order = ["Bruteforce", "Greedy", "Random"]
-
-    # Ordina per candidates
-    run_results_pdcs.sort(key=lambda x: int(x["candidates"]))
-
-    candidates = [int(x["candidates"]) for x in run_results_pdcs]
-    series = {
-        "Bruteforce": [int(x["Bruteforce"]) for x in run_results_pdcs],
-        "Greedy":     [int(x["Greedy"]) for x in run_results_pdcs],
-        "Random":     [int(x["Random"]) for x in run_results_pdcs],
-    }
-
-    x = np.arange(len(candidates))
-    width = 0.25
-    offsets = (np.arange(len(alg_order)) - (len(alg_order) - 1) / 2.0) * width
-
-    fig, ax = plt.subplots()
-    ax.set_title(
-        f"Number of PDCs vs Candidates ( single run )",
-        fontsize=12,
-        pad=14,
-    )
-    # Barre + etichette B/G/R sopra
-    for j, algo in enumerate(alg_order):
-        xpos = x + offsets[j]
-        vals = series[algo]
-
-        bars = []
-        for xi, val in zip(xpos, vals):
-
-            if val == 1:
-                # Timeout → niente barra
-                ax.text(
-                    xi,
-                    0.3,                  # altezza fissa bassa
-                    "Timeout",
-                    ha="center",
-                    va="bottom",
-                    fontsize=10,
-                    fontweight="bold",
-                    rotation=90,
-                    color=ALGO_COLORS_UNIFIED.get(algo, "black"),
-                )
-                bars.append(None)
-            else:
-                bar = ax.bar(
-                    xi,
-                    val,
-                    width=width,
-                    color=ALGO_COLORS_UNIFIED.get(algo, "0.8"),
-                    edgecolor="black",
-                    linewidth=0.8,
-                )
-                bars.append(bar[0])
-
-
-        # Lettera sopra ogni barra (B/G/R)
-        letter = SHORT_LETTER.get(algo, "")
-        for rect in bars:
-            if rect is None:
-                continue
-            h = rect.get_height()
-            ax.text(
-                rect.get_x() + rect.get_width() / 2.0,
-                h + 0.05,               # piccolo offset verticale
-                letter,
-                ha="center",
-                va="bottom",
-                fontsize=9,
-                color="0.25",
-                clip_on=False,
-            )
-
-    #ax.set_title("Number of PDCs vs Candidates (CC included)")
-    ax.set_xlabel("Number of candidate nodes")
-    ax.set_ylabel("Number of PDCs (including CC)")
-    ax.set_xticks(x)
-    ax.set_xticklabels([str(c) for c in candidates])
-
-    handles = [
-        Patch(facecolor=ALGO_COLORS_UNIFIED[a], edgecolor="black", label=a)
-        for a in alg_order
-    ]
-
-    ax.legend(
-        handles=handles,
-        loc="upper left",   # ← dentro, in alto a sinistra
-        frameon=False,
-        fontsize=9,
-    )
-    ax.grid(True, axis="y", alpha=0.25)
-    plt.tight_layout()
-
-    # Salvataggio in summarymode2
-    plots_dir = _summary_mode2_dir()
-    plots_dir.mkdir(parents=True, exist_ok=True)
-
-    out_path = plots_dir / f"pdcs_vs_candidates_singlerun{run_index}.pdf"
-    _save_or_show(fig, out_path, dpi=200)
-
-
 def plot_pdcs_vs_candidates_boxplot(*, timeout_value: int = 1):
-
     run_dirs = discover_run_dirs()
     blocks = group_run_dirs(run_dirs, block_size=MODE2_BLOCK_SIZE)
 
@@ -1435,7 +1528,7 @@ def plot_pdcs_vs_candidates_boxplot(*, timeout_value: int = 1):
             vals_ok = [float(v) for v in vals_raw if v != timeout_value]
 
             if len(vals_ok) == 0:
-                data.append([])        # niente box
+                data.append([])        
                 timeout_mask.append(True)
             else:
                 data.append(vals_ok)
@@ -1443,15 +1536,14 @@ def plot_pdcs_vs_candidates_boxplot(*, timeout_value: int = 1):
 
         return data, timeout_mask
 
-    data_by_algo = {}
-    timeout_mask_by_algo = {}
+    data_by_algo: dict[str, list[list[float]]] = {}
+    timeout_mask_by_algo: dict[str, list[bool]] = {}
 
     for algo in alg_order:
         d, m = collect_for_candidates(algo)
         data_by_algo[algo] = d
         timeout_mask_by_algo[algo] = m
 
-    # y-limits
     all_ok = [v for algo in alg_order for group in data_by_algo[algo] for v in group]
     if not all_ok:
         print("⚠️ All values are timeouts; nothing to plot.")
@@ -1460,7 +1552,6 @@ def plot_pdcs_vs_candidates_boxplot(*, timeout_value: int = 1):
     Y_MAX_VIS = max(all_ok) * 1.30
     Y_MIN_VIS = 0.0
 
-    # --- positions ---
     K = len(candidates_sorted)
     base = np.arange(K)
 
@@ -1468,9 +1559,9 @@ def plot_pdcs_vs_candidates_boxplot(*, timeout_value: int = 1):
     width = 0.22
     offsets = (np.arange(nA) - (nA - 1) / 2.0) * width
 
-    box_data = []
-    box_algos = []
-    positions = []
+    box_data: list[list[float]] = []
+    box_algos: list[str] = []
+    positions: list[float] = []
 
     for i_cand in range(K):
         for j, algo in enumerate(alg_order):
@@ -1479,15 +1570,8 @@ def plot_pdcs_vs_candidates_boxplot(*, timeout_value: int = 1):
             positions.append(float(base[i_cand] + offsets[j]))
 
     fig, ax = plt.subplots(figsize=(max(10, K * 1.8), 5.5))
-
     fig.subplots_adjust(top=0.90)
 
-    ax.set_title(
-        f"Distribution of Algorithm Runtime vs Network Size (n = {len(blocks)} runs)",
-        fontsize=12,
-        pad=14,
-    )
-    
     bp = ax.boxplot(
         box_data,
         positions=positions,
@@ -1497,15 +1581,11 @@ def plot_pdcs_vs_candidates_boxplot(*, timeout_value: int = 1):
         manage_ticks=False,
     )
 
-    # ---- styling + Timeout vertical text ----
     for i, (box, algo) in enumerate(zip(bp["boxes"], box_algos)):
-
         is_timeout = timeout_mask_by_algo[algo][i // nA]
 
         if is_timeout:
-            # Nascondi box
             box.set_visible(False)
-
             ax.text(
                 positions[i],
                 Y_MAX_VIS * 0.5,
@@ -1513,7 +1593,7 @@ def plot_pdcs_vs_candidates_boxplot(*, timeout_value: int = 1):
                 rotation=90,
                 ha="center",
                 va="center",
-                fontsize=10,
+                fontsize=PLOT_FONTS["anno"],
                 fontweight="bold",
                 color=ALGO_COLORS_UNIFIED.get(algo, "black"),
                 alpha=0.85,
@@ -1526,11 +1606,9 @@ def plot_pdcs_vs_candidates_boxplot(*, timeout_value: int = 1):
     for med in bp["medians"]:
         med.set_color("black")
         med.set_linewidth(1.6)
-
     for w in bp["whiskers"]:
         w.set_color("black")
         w.set_linewidth(1.2)
-
     for c in bp["caps"]:
         c.set_color("black")
         c.set_linewidth(1.2)
@@ -1538,19 +1616,22 @@ def plot_pdcs_vs_candidates_boxplot(*, timeout_value: int = 1):
     _add_letters_above_boxes(ax, bp, positions, box_algos)
 
     ax.set_xticks(base)
-    ax.set_xticklabels([str(c) for c in candidates_sorted])
+    ax.set_xticklabels([str(c) for c in candidates_sorted], fontsize=PLOT_FONTS["ticks"])
     ax.set_xlabel("Number of candidate nodes")
     ax.set_ylabel("Number of PDCs (including CC)")
     ax.set_ylim(Y_MIN_VIS, Y_MAX_VIS)
-
     ax.grid(True, axis="y")
 
     handles = [
         Patch(facecolor=ALGO_COLORS_UNIFIED[a], edgecolor="black", label=a)
         for a in alg_order
     ]
-    ax.legend(handles=handles, loc="upper right", frameon=False, fontsize=9)
+    ax.legend(handles=handles, loc="upper right", frameon=False, fontsize=PLOT_FONTS["legend"])
 
+    _apply_font_theme(
+        ax,
+        title=f"Distribution of PDCs vs Candidates (n = {len(blocks)} runs)",
+    )
 
     out = _summary_mode2_dir() / "pdcs_vs_candidates_boxplot.pdf"
     _save_or_show(fig, out)
