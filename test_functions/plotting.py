@@ -62,7 +62,11 @@ def _add_unified_legend(ax, *, alg_order, colors, fontsize=None):
     if fontsize is None:
         fontsize = PLOT_FONTS["legend"]
 
-    handles = [Patch(facecolor=colors[a], edgecolor="black", label=a) for a in alg_order]
+    handles = []
+    for a in alg_order:
+        label = "Brute Force" if a == "Bruteforce" else a
+        handles.append(Patch(facecolor=colors[a], edgecolor="black", label=label))
+
     ax.legend(handles=handles, loc="upper right", frameon=False, fontsize=fontsize)
 
 def _title_distribution(main: str, *, n: int | None = None) -> str:
@@ -1046,7 +1050,7 @@ def plot_runtime_boxplot_singlecol(  # papar single col version
         Patch(
             facecolor=ALGO_COLORS_UNIFIED.get(algo, "0.8"),
             edgecolor="black",
-            label=algo
+            label="Brute Force" if algo == "Bruteforce" else algo
         )
         for algo in alg_order
     ]
@@ -1075,7 +1079,7 @@ def plot_runtime_boxplot_singlecol(  # papar single col version
     fig.tight_layout(pad=0.3)
 
     out = (
-        output_dir / "summarymode1" / "runtime_boxplot_singlecol.png"
+        output_dir / "summarymode1" / "runtime_boxplot_singlecol.pdf"
         if output_dir is not None
         else None
     )
@@ -1293,7 +1297,11 @@ def plot_pdcs_vs_candidates_singlerun(run_results_pdcs: list[dict], run_index: i
     ax.set_xticklabels([str(c) for c in candidates], fontsize=PLOT_FONTS["ticks"])
 
     handles = [
-        Patch(facecolor=ALGO_COLORS_UNIFIED[a], edgecolor="black", label=a)
+        Patch(
+            facecolor=ALGO_COLORS_UNIFIED[a],
+            edgecolor="black",
+            label="Brute Force" if a == "Bruteforce" else a
+        )
         for a in alg_order
     ]
     ax.legend(
@@ -1623,7 +1631,11 @@ def plot_pdcs_vs_candidates_boxplot(*, timeout_value: int = 1):
     ax.grid(True, axis="y")
 
     handles = [
-        Patch(facecolor=ALGO_COLORS_UNIFIED[a], edgecolor="black", label=a)
+        Patch(
+            facecolor=ALGO_COLORS_UNIFIED[a],
+            edgecolor="black",
+            label="Brute Force" if a == "Bruteforce" else a
+        )
         for a in alg_order
     ]
     ax.legend(handles=handles, loc="upper right", frameon=False, fontsize=PLOT_FONTS["legend"])
